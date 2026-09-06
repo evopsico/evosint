@@ -1,0 +1,64 @@
+Evosint - Launch Instructions
+===============================
+
+Due to compatibility issues with the HTA desktop application on modern Windows systems,
+please use one of these reliable methods instead:
+
+🚀 METHOD 1: DOUBLE-CLICK LAUNCHER (RECOMMENDED)
+------------------------------------------------
+1. Double-click this file: "C:\Users\gamer\ai section\launch-evosint.bat"
+2. A command window will appear and show:
+   - Checking if Evosint server is running
+   - Starting server if necessary
+   - Opening Evosint in your default browser
+3. When you see "Evosint launched in browser!", you can close the command window
+4. Evosint is now ready to use in your browser!
+
+🔧 METHOD 2: MANUAL COMMAND LINE
+-------------------------------
+1. Open Command Prompt or PowerShell
+2. Navigate to the ai section folder:
+   cd "C:\Users\gamer\ai section"
+3. Run the launcher:
+   node launch-evosint.js
+4. Follow the same steps as above
+
+🌐 METHOD 3: DIRECT BROWSER ACCESS
+---------------------------------
+If you know the Evosint server is already running:
+1. Open your preferred browser (Chrome, Firefox, Edge, etc.)
+2. Go to: http://localhost:3001
+3. Start using Evosint immediately!
+
+📱 USING EVOSINT
+-----------------
+- Click any tool card (IP Lookup, Domain WHOIS, Email Breach Check, etc.)
+- Enter your target in the input field
+- Click "Run Intelligence Scan" or press Enter
+- View results in the formatted output area with syntax highlighting
+- Export results as JSON/CSV from the Export tab
+- Toggle dark/light mode using the sun/moon icon in the top-right corner
+
+🔒 IMPORTANT REMINDER
+--------------------
+This tool is for authorized security testing, defensive security,
+CTF challenges, and educational purposes only. Always ensure you have
+explicit permission before investigating any targets.
+
+✅ VERIFICATION
+--------------
+- Server health check: http://localhost:3001/health
+- Main interface: http://localhost:3001
+- Example IP lookup: http://localhost:3001/api/ip/8.8.8.8
+
+🛠️ TROUBLESHOOTING
+------------------
+If you encounter issues:
+1. Make sure Node.js is installed (run `node --version` in Command Prompt)
+2. If the batch file doesn't work when double-clicked, try:
+   - Right-click → "Run as administrator"
+   - Or open Command Prompt and run: node launch-evosint.js
+3. Check that nothing else is using port 3001 (though the launcher handles this)
+4. The launcher will automatically start the server on port 3001 if needed
+
+Your Evosint tool is ready to use - just double-click launch-evosint.bat!

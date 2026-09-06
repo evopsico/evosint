@@ -1,0 +1,95 @@
+// Headless UI boot test: serves the real app, runs app.js in jsdom, asserts render + auth flow.
+// Usage: node test-ui.js  (spawns server on :3999, exits 0/1)
+const { spawn } = require('child_process');
+const http = require('http');
+const { JSDOM, VirtualConsole } = require('jsdom');
+
+const PORT = 3999;
+const BASE = `http://127.0.0.1:${PORT}`;
+let failures = 0;
+function check(name, cond, extra = '') {
+  console.log((cond ? 'PASS' : 'FAIL') + ' ' + name + (extra ? ' | ' + extra : ''));
+  if (!cond) failures++;
+}
+function get(path, timeout = 20000) {
+  return new Promise((resolve) => {
+    const req = http.request({ hostname: '127.0.0.1', port: PORT, path, method: 'GET', timeout }, (res) => {
+      let d = ''; res.on('data', (c) => { d += c; });
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: d }));
+    });
+    req.on('timeout', () => { req.destroy(); resolve({ status: -1, body: 'TIMEOUT' }); });
+    req.on('error', (e) => resolve({ status: -1, body: e.message }));
+    req.end();
+  });
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+(async () => {
+  const srv = spawn('node', ['backend/server.js'], { cwd: process.cwd(), env: { ...process.env, PORT: String(PORT) } });
+  await sleep(3500);
+
+  // 1) cache headers = the actual "lock" fix
+  let r = await get('/');
+  check('GET / 200, no-store', r.status === 200 && String(r.headers['cache-control']).includes('no-store'), r.headers['cache-control']);
+  check('version stamped, no tokens left', r.body.includes('/public/app.js?v=') && !r.body.includes('__APPV__'));
+  const ver = (r.body.match(/Evosint v([\d.]+)/) || [])[1];
+  r = await get('/public/app.js');
+  check('app.js no-store', String(r.headers['cache-control']).includes('no-store'), r.headers['cache-control']);
+  const appJs = r.body;
+  check('app.js served', r.status === 200 && appJs.length > 50000, appJs.length + ' bytes');
+  r = await get('/api/health');
+  check('api no-store', String(r.headers['cache-control']).includes('no-store'));
+  check('health version = footer version', JSON.parse(r.body).version === ver, JSON.parse(r.body).version + ' vs ' + ver);
+
+  // 2) boot UI in jsdom with live fetch
+  r = await get('/');
+  const errors = [];
+  const vc = new VirtualConsole();
+  vc.on('jsdomError', (e) => errors.push('jsdomError: ' + (e.detail?.stack || e.message || e)));
+  vc.on('error', (...a) => errors.push('console.error: ' + a.join(' ')));
+  const dom = new JSDOM(r.body.replace(/<script src="\/public\/app\.js[^"]*"><\/script>/, ''), {
+    url: BASE + '/', runScripts: 'dangerously', pretendToBeVisual: true, virtualConsole: vc,
+  });
+  dom.window.fetch = (u, o) => globalThis.fetch(new URL(u, dom.window.location.href).toString(), o);
+  dom.window.AbortController = AbortController; // native controller: undici rejects jsdom-realm signals
+  dom.window.eval(appJs + '\n;window.__T={openAuth,show,TOOLS,AUTH,S,apiGet};');
+  const T = () => dom.window.__T;
+  const q = (s) => dom.window.document.querySelector(s);
+  const qa = (s) => [...dom.window.document.querySelectorAll(s)];
+  for (let i = 0; i < 30 && !((q('[data-v="modules"] .n') || {}).textContent || '').match(/^\d+$/); i++) await sleep(500);
+
+  check('no uncaught JS errors', errors.length === 0, errors.slice(0, 2).join(' ;; ').slice(0, 300));
+  check('nav rendered (15+ buttons)', qa('#nav button').length >= 15, qa('#nav button').length + ' buttons');
+  check('15 views mounted', qa('.view').length === 15, qa('.view').length + ' views');
+  check('tool cards mounted (60+)', qa('.card[data-card]').length >= 60, qa('.card[data-card]').length + ' cards');
+  check('account chip injected', !!q('#acctChip'), (q('#acctChip') || { textContent: 'MISSING' }).textContent.trim());
+  check('auth modal injected', !!q('#authBack'));
+  check('health pill online', (q('#htxt') || {}).textContent?.includes('online'), (q('#htxt') || {}).textContent);
+  check('modules badge counted', /\d+/.test((q('[data-v="modules"] .n') || {}).textContent || ''), (q('[data-v="modules"] .n') || {}).textContent);
+
+  // 3) full signup flow through the real UI
+  T().openAuth('signup');
+  await sleep(300);
+  const uname = 'uitest' + Date.now().toString(36);
+  q('#su-user').value = uname;
+  q('#su-pass').value = 'UiTestPass1!';
+  q('#su-pass2').value = 'UiTestPass1!';
+  q('#su-dob').value = '1999-03-03';
+  q('#suGo').click();
+  await sleep(2500);
+  check('signup via UI sets chip + name', (q('#acctChip') || {}).textContent?.includes(uname) && (q('#whoami') || {}).textContent === uname,
+    'chip=' + ((q('#acctChip') || {}).textContent || '').trim());
+  check('token persisted', (dom.window.localStorage.getItem('evosint-token') || '').startsWith('v1.'));
+
+  // 4) logout returns to guest
+  T().openAuth('account');
+  await sleep(300);
+  const lo = q('#logoutGo');
+  check('account pane w/ logout rendered', !!lo);
+  if (lo) { lo.click(); await sleep(1500); }
+  check('logout -> guest chip', (q('#acctChip') || {}).textContent?.includes('Guest'), (q('#acctChip') || {}).textContent?.trim());
+
+  console.log(failures === 0 ? '\nALL UI TESTS GREEN' : `\n${failures} FAILURES`);
+  srv.kill();
+  process.exit(failures === 0 ? 0 : 1);
+})().catch((e) => { console.error('HARNESS FAIL', e); process.exit(1); });

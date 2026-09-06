@@ -1,0 +1,81 @@
+EVOSINT - SHARING WITH OTHER PEOPLE
+====================================
+
+The console runs on YOUR machine. Pick how far you want to share it.
+Easiest first.
+
+------------------------------------------------------------
+OPTION 1: SAME WI-FI (30 seconds, no internet needed)
+------------------------------------------------------------
+1. On YOUR pc, find your local IP:
+     Open PowerShell and run:  ipconfig
+     Look for "IPv4 Address" (looks like 192.168.1.23)
+2. Make sure Evosint is running (launch-evosint.bat).
+3. On THEIR device (same Wi-Fi), open:
+     http://YOUR-IP:3001        (example: http://192.168.1.23:3001)
+4. If their browser can't connect, Windows Firewall blocked it:
+     - On your PC: Settings > Firewall > Allow an app >
+       allow Node.js on Private networks (tick it, retry).
+
+Everyone gets their own guest scans (2), or signs up free (50).
+Your evo login stays yours - never share that password.
+
+------------------------------------------------------------
+OPTION 2: OVER THE INTERNET, FREE (Cloudflare Tunnel)
+------------------------------------------------------------
+No port forwarding, no open ports, free HTTPS link. Best option.
+
+1. Install cloudflared (one time):
+     winget install --id Cloudflare.cloudflared
+2. Start Evosint normally (launch-evosint.bat).
+3. In a NEW terminal, run:
+     cloudflared tunnel --url http://localhost:3001
+4. Cloudflare prints a public link like:
+     https://random-words.trycloudflare.com
+   Send THAT link to anyone. Works from anywhere in the world.
+
+5. IMPORTANT - before sharing publicly, set two things in a
+   ".env" file next to package.json (copy .env.example first):
+     TRUST_PROXY=1
+     DISABLE_STRESS=1
+   Then restart the server. Why:
+   - TRUST_PROXY=1 gives each visitor their own IP, so quotas
+     and rate limits apply per person instead of one shared bucket.
+   - DISABLE_STRESS=1 turns off the load tester for strangers.
+     (Keep it on only for your own private use.)
+
+Free trycloudflare links change every restart. For a permanent
+address, create a free Cloudflare account and use a named tunnel
+or Tunnels > Quick Tunnels from the dashboard.
+
+------------------------------------------------------------
+OPTION 3: YOUR OWN SERVER (VPS, always online)
+------------------------------------------------------------
+For 24/7 access without your PC running.
+
+1. Rent any cheap VPS (2 GB RAM is plenty) running Ubuntu.
+2. Install Node.js 20+, copy the whole "ai section" folder over,
+   then on the VPS:
+     npm install
+     (create .env with TRUST_PROXY=1 and DISABLE_STRESS=1,
+      plus PORT=3001 and a long random SESSION_SECRET)
+     npm start   (run under pm2 or systemd so it survives reboots:
+      npm i -g pm2 && pm2 start backend/server.js --name evosint && pm2 save)
+3. Point a domain at the VPS and put Caddy in front for HTTPS:
+     (install caddy, one-line Caddyfile:  evosint.example.com {
+        reverse_proxy 127.0.0.1:3001 } )
+4. Open only ports 80/443 on the VPS firewall, nothing else.
+
+------------------------------------------------------------
+SAFETY CHECKLIST (do this before ANY public link)
+------------------------------------------------------------
+[x] Change the evo password (log in > click your name > Account).
+[x] Set a long random SESSION_SECRET in .env.
+[x] Set TRUST_PROXY=1 (tunnel/VPS) so quotas work per visitor.
+[x] Set DISABLE_STRESS=1 on any instance strangers can reach.
+[x] Never commit .env or backend/data/ anywhere (already git-ignored).
+[x] Keep API keys (HIBP etc.) server-side only - they already are.
+[x] Guests get 2 scans, signups get 50 - abuse surface is small,
+    but watch the server log if you share widely.
+
+Revoke anytime: stop the tunnel / server and the link dies instantly.

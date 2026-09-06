@@ -1,0 +1,50 @@
+Evosint - Quick Start Guide
+=============================
+
+The HTA desktop application is experiencing technical issues.
+Please use this simple alternative instead:
+
+🚀 QUICK START (Recommended)
+----------------------------
+1. Open Command Prompt or PowerShell
+2. Navigate to the ai section folder:
+   cd "C:\Users\gamer\ai section"
+3. Run the launcher:
+   node launch-evosint.js
+4. Evosint will automatically open in your default browser
+
+🔧 MANUAL START
+---------------
+If you prefer to start it yourself:
+1. Open Command Prompt or PowerShell
+2. Navigate to the ai section folder:
+   cd "C:\Users\gamer\ai section"
+3. Start the server:
+   npm start
+4. Open your browser to: http://localhost:3001
+
+📱 DIRECT ACCESS
+----------------
+If the server is already running, just open:
+http://localhost:3001
+
+🎯 USING EVOSINT
+-----------------
+- Click any tool card (IP Lookup, Domain WHOIS, etc.)
+- Enter your target in the input field
+- Click "Run Intelligence Scan" or press Enter
+- View results in the formatted output area
+- Export as JSON/CSV using the Export tab
+- Toggle dark/light mode with the sun/moon icon
+
+🔒 IMPORTANT
+-----------
+This tool is for authorized security testing, defensive security,
+CTF challenges, and educational purposes only. Always ensure you
+have explicit permission before investigating any targets.
+
+✅ VERIFICATION
+--------------
+Server status: http://localhost:3001/health
+Main interface: http://localhost:3001/
+Example lookup: http://localhost:3001/api/ip/8.8.8.8

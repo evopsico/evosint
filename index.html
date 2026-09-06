@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Evosint — dark intelligence console: breach search, username engines, network intel, threat feeds, geo, crypto, forensics.">
+<title>Evosint — Intelligence Console</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>◈</text></svg>">
+<link href="https://cdn.jsdelivr.net/npm/@fontsource/public-sans@5.2.5/300.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/@fontsource/public-sans@5.2.5/400.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/@fontsource/public-sans@5.2.5/700.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/@fontsource/public-sans@5.2.5/800.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/@fontsource/jetbrains-mono@5.2.5/400.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/@fontsource/jetbrains-mono@5.2.5/600.min.css" rel="stylesheet">
+<link rel="stylesheet" href="/public/styles.css?v=__APPV__">
+</head>
+<body>
+<div class="classif">Fictional training simulation — not affiliated with the FBI or any government agency</div>
+<div class="shell">
+  <aside class="side" id="side">
+    <div class="brand"><div class="seal">★</div><div><b>EVO<span>//</span>SINT</b><small>OPEN-SOURCE DESK · PARODY BUILD</small></div></div>
+    <div class="fict"><b>NOTICE:</b> fictional case-file interface for authorized training. Not the FBI, not a government system. All lookups use public sources only.</div>
+    <nav class="nav" id="nav"></nav>
+    <div class="side-foot">
+      <div class="localmode"><i></i>LOCAL MODE · UNLIMITED</div>
+      <button class="ghost" id="histBtn" style="width:100%">🕘 History &amp; Exports</button>
+    </div>
+  </aside>
+  <div class="main">
+    <div class="top">
+      <button class="iconbtn burger" id="burger">☰</button>
+      <button class="ghost" id="menuBtn" title="Main menu (Ctrl+K)">▦ Menu</button>
+      <h2 id="vtitle">Dashboard<small id="vsub"></small></h2>
+      <div class="qsearch">
+        <input id="q" type="search" placeholder="Quick search — email, phone, user, domain, ip, hash…" aria-label="Quick search">
+        <button class="btn" id="qgo">Scan ▸</button>
+      </div>
+      <span class="pill"><span class="dot" id="hdot"></span><span id="htxt">…</span></span>
+    </div>
+    <div id="views"></div>
+    <div class="foot">
+      Evosint v__APPV__ · fictional parody interface · not the FBI · not a government system<br>
+      <code class="k">/api</code> · <code class="k">/health</code> · single-file backend, no tracking<br>
+      <span class="warn">⚠ AUTHORIZED USE ONLY — ALWAYS HAVE PERMISSION BEFORE INVESTIGATING A TARGET.</span>
+    </div>
+  </div>
+</div>
+<div class="classif bot">Fictional training simulation — not affiliated with the FBI or any government agency</div>
+<div class="drawer" id="drawer">
+  <header><b>🕘 History &amp; Exports</b><span style="flex:1"></span>
+    <button class="mini" id="expJson">JSON</button><button class="mini" id="expCsv">CSV</button>
+    <button class="mini" id="printBtn">Print</button><button class="mini" id="clrHist">Clear</button>
+    <button class="mini" id="xDrawer">✕</button></header>
+  <div class="hlist" id="hlist"></div>
+</div>
+<div class="toasts" id="toasts"></div>
+<div class="pal-back" id="palBack"><div class="pal" role="dialog" aria-label="Main menu">
+  <div class="pal-head"><span>⌕</span><input id="palInput" placeholder="Main menu quicksearch — views, tools, engines, actions…  (Esc to close)" autocomplete="off" spellcheck="false"><kbd>esc</kbd></div>
+  <div class="pal-list" id="palList"></div>
+  <div class="pal-foot"><span><kbd>↑↓</kbd> navigate</span><span><kbd>↵</kbd> open</span><span><kbd>ctrl k</kbd> toggle</span></div>
+</div></div>
+<script src="/public/app.js?v=__APPV__"></script>
+</body>
+</html>

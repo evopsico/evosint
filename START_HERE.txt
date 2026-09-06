@@ -1,0 +1,58 @@
+🚀 EVOSINT - QUICK START (RECOMMENDED METHOD)
+=================================================
+
+FORGET THE HTA FILE - USE THIS INSTEAD:
+The HTA approach has compatibility issues. Use this simple, reliable method:
+
+OPTION 1: DOUBLE-CLICK TO LAUNCH (EASIEST)
+------------------------------------------
+1. Double-click this file: "C:\Users\gamer\ai section\launch-evosint.bat"
+2. Wait for the command window to say "Evosint launched in browser!"
+3. Your default browser will automatically open to http://localhost:3001
+4. Start using Evosint immediately!
+
+OPTION 2: MANUAL LAUNCH (MORE CONTROL)
+--------------------------------------
+1. Open Command Prompt or PowerShell
+2. Navigate to: cd "C:\Users\gamer\ai section"
+3. Run: node launch-evosint.js
+4. Watch as it starts the server and opens your browser
+5. Enjoy Evosint!
+
+OPTION 3: IF SERVER IS ALREADY RUNNING
+--------------------------------------
+Just open your browser to: http://localhost:3001
+
+✅ WHY THIS IS BETTER THAN HTA:
+- No frame/security errors
+- Works reliably on all Windows systems
+- Uses your preferred browser (Chrome, Firefox, Edge, etc.)
+- Full access to browser dev tools if needed
+- Automatic server startup if not running
+- Clear feedback in console window
+
+📱 USING EVOSINT:
+- Click any tool card (IP Lookup, Domain WHOIS, Email Breach, etc.)
+- Enter your target in the input field
+- Click "Run Intelligence Scan" or press Enter
+- View results with syntax highlighting
+- Export as JSON/CSV from the Export tab
+- Toggle dark/light mode with sun/moon icon (top-right)
+
+🔒 IMPORTANT REMINDER:
+This tool is for authorized security testing, defensive security,
+CTF challenges, and educational purposes only. Always ensure you
+have explicit permission before investigating any targets.
+
+🔧 TROUBLESHOOTING:
+If nothing happens when you double-click the .bat file:
+1. Right-click the .bat file → "Run as administrator"
+2. Or open Command Prompt and run: node launch-evosint.js
+3. Make sure you see the command window output
+
+🌐 SERVER STATUS:
+- Health check: http://localhost:3001/health
+- Main interface: http://localhost:3001
+- Example: http://localhost:3001/api/ip/8.8.8.8
+
+Your Evosint tool is ready to use - just double-click launch-evosint.bat!
