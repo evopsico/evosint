@@ -41,32 +41,43 @@ async function fSave(name, obj) {
   await fsp.rename(tmp, p);
 }
 
-// ---------- vercel-kv backend ----------
+// ---------- vercel-kv backend (Vercel KV legacy *or* Upstash Redis) ----------
+// Vercel deprecated @vercel/kv: old projects expose KV_REST_API_URL, new ones
+// get Upstash Redis (UPSTASH_REDIS_REST_URL) from the Marketplace. Both speak
+// the same get/set/setnx, so we accept either pair of env vars.
 let kvClient = null;
 function kv() {
   if (kvClient) return kvClient;
-  let mod;
-  try {
-    // eslint-disable-next-line global-require, import/no-dynamic-require
-    mod = require('@vercel/kv');
-  } catch {
-    throw new Error('STORE=vercel-kv needs the @vercel/kv package (npm i @vercel/kv)');
+  if (process.env.KV_REST_API_URL) {
+    let mod;
+    try {
+      // eslint-disable-next-line global-require, import/no-dynamic-require
+      mod = require('@vercel/kv');
+    } catch {
+      throw new Error('KV_REST_API_URL is set but @vercel/kv is not installed (npm i @vercel/kv)');
+    }
+    kvClient = mod.kv;
+    return kvClient;
   }
-  if (!process.env.KV_REST_API_URL) {
-    throw new Error('STORE=vercel-kv is set but no KV database is connected (KV_REST_API_URL missing). In the Vercel dashboard: Storage → Create Database → KV, then redeploy. Locally, unset STORE to use files.');
+  if (process.env.UPSTASH_REDIS_REST_URL) {
+    let mod;
+    try {
+      // eslint-disable-next-line global-require, import/no-dynamic-require
+      mod = require('@upstash/redis');
+    } catch {
+      throw new Error('UPSTASH_REDIS_REST_URL is set but @upstash/redis is not installed (npm i @upstash/redis)');
+    }
+    kvClient = new mod.Redis({ url: process.env.UPSTASH_REDIS_REST_URL, token: process.env.UPSTASH_REDIS_REST_TOKEN });
+    return kvClient;
   }
-  kvClient = mod.kv;
-  return kvClient;
+  throw new Error('STORE=vercel-kv is set but no Redis/KV database is connected (neither KV_REST_API_URL nor UPSTASH_REDIS_REST_URL found). In Vercel: Storage/Marketplace → add Upstash Redis → connect it to this project → redeploy. Locally, unset STORE to use files.');
 }
 const K = { users: 'evosint:users', keys: 'evosint:keys', guests: 'evosint:guests', secret: 'evosint:secret' };
 async function kLoad(key, fallback) {
-  try {
-    const v = await kv().get(key);
-    return v === null || v === undefined ? fallback : v;
-  } catch (e) {
-    if (/KV_REST_API_URL|needs/.test(e.message)) throw e;
-    return fallback;
-  }
+  // Fail CLOSED: a Redis outage must 500 loudly, never silently reset
+  // quotas or log everyone out by degrading to empty stores.
+  const v = await kv().get(key);
+  return v === null || v === undefined ? fallback : v;
 }
 async function kSave(key, obj) {
   await kv().set(key, obj);

@@ -31,9 +31,10 @@ catch-all function (`api/[...all].js`, 60s `maxDuration`, no rewrites needed).
 1. Push this folder to GitHub (see below), then on vercel.com: **Add New →
    Project → Import** the repo. Framework preset: **Other**. No build command,
    output directory: repo root (default static). Deploy.
-2. **Storage (required, 2 clicks):** serverless functions have no disk, so
-   accounts/quotas need Vercel KV — dashboard: **Storage → Create Database →
-   KV**, connect it to the project, redeploy. Then set env var `STORE=vercel-kv`.
+2.  **Storage (required, 2 clicks):** serverless functions have no disk, so
+   accounts/quotas need Redis — dashboard: add **Upstash Redis** from the
+   Vercel Marketplace (the old Vercel KV is deprecated; either works) and
+   connect it to the project, redeploy. Then set env var `STORE=vercel-kv`.
    Without this, auth endpoints fail fast with setup instructions instead of
    silently losing data. Local dev keeps using `backend/data/` files (`STORE=file`).
 3. Copy the env keys you use (`HIBP_API_KEY`, `GITHUB_TOKEN`, …) plus a long
