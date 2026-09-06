@@ -64,6 +64,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('tool cards mounted (60+)', qa('.card[data-card]').length >= 60, qa('.card[data-card]').length + ' cards');
   check('account chip injected', !!q('#acctChip'), (q('#acctChip') || { textContent: 'MISSING' }).textContent.trim());
   check('auth modal injected', !!q('#authBack'));
+  check('auth modal has discord support', (q('#authBack') || {}).textContent?.includes('evopsico'));
+  check('dashboard has discord banner', !!q('.supportbar') && (q('.supportbar') || {}).textContent?.includes('evopsico'));
   check('health pill online', (q('#htxt') || {}).textContent?.includes('online'), (q('#htxt') || {}).textContent);
   check('modules badge counted', /\d+/.test((q('[data-v="modules"] .n') || {}).textContent || ''), (q('[data-v="modules"] .n') || {}).textContent);
 

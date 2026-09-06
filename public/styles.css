@@ -208,6 +208,11 @@ code.k{font-family:var(--mono);background:#0c0d0f;border:1px solid var(--border)
 .auth-err{display:none;background:rgba(248,113,113,.1);border:1px solid var(--badbd);color:var(--bad);font-size:12.5px;border-radius:8px;padding:9px 12px;margin-bottom:12px}
 .keyrow{display:flex;gap:10px;align-items:center;border:1px solid var(--border);border-radius:8px;padding:8px 11px;margin-bottom:7px;font-size:12px}
 .keyrow .mini{margin-left:auto}
+.auth-support{margin-top:16px;padding-top:12px;border-top:1px solid var(--border);font-size:12px;color:var(--muted);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.auth-support b{color:var(--text);font-family:var(--mono)}
+.supportbar{display:flex;gap:14px;align-items:center;background:var(--card);border:1px solid var(--border);border-left:3px solid #fafafa;border-radius:12px;padding:14px 18px;margin-top:18px}
+.supportbar b{font-size:13.5px}
+@media(max-width:560px){.supportbar{flex-wrap:wrap}}
 #acctChip{font-family:var(--mono)}
 /* dork links */
 .dork{display:flex;gap:9px;align-items:center;padding:7px 0;border-bottom:1px solid #141619;font-size:12px}

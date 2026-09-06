@@ -238,6 +238,7 @@ function injectAuth(){
       <div class="brow"><button class="btn" id="suGo">Create account ▸</button></div>
     </div>
     <div id="auth-account" style="display:none"></div>
+    <div class="auth-support">🔧 Problems logging in or out of scans? Contact <b>evopsico</b> on Discord <button class="mini" data-act="copy-variants" data-v="evopsico">Copy</button></div>
   </div>`;
   document.body.appendChild(back);
   back.querySelectorAll('[data-at]').forEach(b=>b.onclick=()=>{ b.dataset.at==='x' ? closeAuth() : authTab(b.dataset.at); });
@@ -984,7 +985,8 @@ function buildViews(){
         </div><p style="font-size:12px;color:var(--muted)">Top bar, Ctrl+K menu, or the Search view — type is auto-detected.</p>
         <div class="brow"><button class="btn" data-act="goto-search">Open Search ▸</button></div></div>
     </div>
-    <div class="sect">Recent scans</div><div id="dash-hist" class="grid"></div>`) +
+    <div class="sect">Recent scans</div><div id="dash-hist" class="grid"></div>
+    <div class="supportbar"><div class="cico">💬</div><div style="flex:1;min-width:200px"><b>Need a hand?</b><br><span style="color:var(--muted);font-size:12px">Login issues, quota questions, bugs — contact <b style="color:var(--text)">evopsico</b> on Discord.</span></div><button class="ghost" data-act="copy-variants" data-v="evopsico">Copy Discord</button></div>`) +
   v('search', `<div class="superbox"><div class="searchtabs" id="stabs">
       ${['email','username','phone','domain','ip'].map((t,i)=>`<button class="fbtn ${i===0?'on':''}" data-tab="${t}">${t==='ip'?'IP Address':t[0].toUpperCase()+t.slice(1)}</button>`).join('')}
       <span style="flex:1"></span><span class="pill" id="stab-note">6 sources · scored</span></div>
