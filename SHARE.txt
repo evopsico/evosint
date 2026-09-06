@@ -49,7 +49,18 @@ address, create a free Cloudflare account and use a named tunnel
 or Tunnels > Quick Tunnels from the dashboard.
 
 ------------------------------------------------------------
-OPTION 3: YOUR OWN SERVER (VPS, always online)
+OPTION 3: VERCEL (free public link, repo stays in sync)
+------------------------------------------------------------
+Best if you want a permanent https link tied to your GitHub.
+
+1. Publish the folder to GitHub, import it on vercel.com (see README
+   "Deploy to Vercel"), connect a KV database, set STORE=vercel-kv.
+2. You get https://your-project.vercel.app instantly, with HTTPS.
+3. Note: very long sweeps can hit serverless timeouts - quick
+   lookups all work; run monster sweeps on your local copy.
+
+------------------------------------------------------------
+OPTION 4: YOUR OWN SERVER (VPS, always online)
 ------------------------------------------------------------
 For 24/7 access without your PC running.
 

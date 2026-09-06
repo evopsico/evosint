@@ -34,7 +34,7 @@ async function apiFetch(url, opts, ms){
     const data = await r.json().catch(()=>({}));
     if(r.status === 402){ try{ openAuth('login', data.error || 'Scan quota exhausted'); }catch{} throw new Error(data.error || 'Scan quota exhausted'); }
     if(r.status === 401 && AUTH.token && path.indexOf('/auth/') < 0){
-      AUTH.token = ''; try{ localStorage.removeItem('evosint-token'); }catch{}
+      AUTH.token = ''; TokenStore.del();
       try{ renderAccount(); openAuth('login', 'Session expired — log in again'); }catch{}
     }
     if(!r.ok) throw new Error(data.error || ('HTTP '+r.status));
@@ -64,16 +64,35 @@ function addEntity(type, value, source){
 
 /* ================= AUTH (login · signup · tiers · keys) ================= */
 const AUTH = { token:'', username:'Guest', tier:'guest', left:2, logged:false };
-try{ AUTH.token = localStorage.getItem('evosint-token') || ''; }catch{}
+// Session store: "remember me" (default) persists across restarts in
+// localStorage; unticked logins live in sessionStorage (tab lifetime only).
+const TokenStore = {
+  get(){ try{ return localStorage.getItem('evosint-token') || sessionStorage.getItem('evosint-token') || ''; }catch{ return ''; } },
+  set(t, remember){ try{ if(remember){ localStorage.setItem('evosint-token', t); sessionStorage.removeItem('evosint-token'); } else { sessionStorage.setItem('evosint-token', t); localStorage.removeItem('evosint-token'); } }catch{} },
+  del(){ try{ localStorage.removeItem('evosint-token'); sessionStorage.removeItem('evosint-token'); }catch{} },
+};
+AUTH.token = TokenStore.get();
 function authHeaders(){ return AUTH.token ? { Authorization:'Bearer '+AUTH.token } : {}; }
-function tierBadge(t){ return t==='super' ? badge('SUPER · ∞','b') : t==='user' ? badge('USER','gr') : badge('GUEST','gr'); }
-function leftText(){ return AUTH.tier==='super' ? '∞ left' : (AUTH.left+' left'); }
-function renderAccount(){
+// Last-known identity snapshot: paints chip + greeting instantly on boot,
+// before the network round-trip confirms the session.
+function paintAccount(){
   const chip = document.getElementById('acctChip');
   const name = AUTH.logged ? AUTH.username : 'Guest';
   if(chip) chip.innerHTML = `👤 ${esc(name)} · ${esc(leftText())}`;
   const who = document.getElementById('whoami');
   if(who) who.textContent = AUTH.logged ? AUTH.username : 'analyst';
+}
+function saveMeSnapshot(){ try{ localStorage.setItem('evosint-me', JSON.stringify({ username:AUTH.username, tier:AUTH.tier, left:AUTH.left==null?null:(AUTH.left===Infinity?'infinite':AUTH.left), logged:AUTH.logged })); }catch{} }
+function loadMeSnapshot(){
+  try{
+    const m = JSON.parse(localStorage.getItem('evosint-me') || 'null');
+    if(m && typeof m === 'object'){ AUTH.username = m.username || 'Guest'; AUTH.tier = m.tier || 'guest'; AUTH.left = m.left === 'infinite' ? Infinity : (parseInt(m.left, 10) || 0); AUTH.logged = !!m.logged && !!TokenStore.get(); }
+  }catch{}
+}
+function tierBadge(t){ return t==='super' ? badge('SUPER · ∞','b') : t==='user' ? badge('USER','gr') : badge('GUEST','gr'); }
+function leftText(){ return AUTH.tier==='super' ? '∞ left' : (AUTH.left+' left'); }
+function renderAccount(){
+  paintAccount();
   if(AUTH.logged && document.getElementById('authBack')?.classList.contains('open')) renderAccountPane();
 }
 function openAuth(tab, msg){
@@ -121,12 +140,13 @@ async function refreshMe(){
   try{
     const d = await apiGet('/auth/me');
     const m = d.data || {};
-    if(m.invalid_credential){ AUTH.token=''; try{localStorage.removeItem('evosint-token');}catch{} }
+    if(m.invalid_credential){ AUTH.token=''; TokenStore.del(); }
     AUTH.logged = !!m.logged_in;
     AUTH.username = m.username || 'Guest';
     AUTH.tier = m.tier || 'guest';
     AUTH.left = m.searches_left === 'infinite' ? Infinity : (parseInt(m.searches_left, 10) || 0);
-  }catch{ /* offline — keep defaults */ }
+    saveMeSnapshot();
+  }catch{ /* offline — snapshot paint already applied */ }
   renderAccount();
 }
 async function doLogin(){
@@ -137,7 +157,7 @@ async function doLogin(){
   try{
     const d = await apiPost('/auth/login', { username:u, password:p });
     AUTH.token = d.data.token;
-    try{ localStorage.setItem('evosint-token', AUTH.token); }catch{}
+    TokenStore.set(AUTH.token, document.getElementById('li-remember')?.checked !== false);
     await refreshMe(); closeAuth(); toast('Welcome back, ' + AUTH.username);
   }catch(e){ err.textContent = e.message; err.style.display='block'; }
 }
@@ -151,12 +171,13 @@ async function doSignup(){
   try{
     const d = await apiPost('/auth/signup', { username:u, password:p1, repeat:p2, dob });
     AUTH.token = d.data.token;
-    try{ localStorage.setItem('evosint-token', AUTH.token); }catch{}
+    TokenStore.set(AUTH.token, true); // new accounts always persist
     await refreshMe(); closeAuth(); toast('Account created — 50 scans, ' + AUTH.username);
   }catch(e){ err.textContent = e.message; err.style.display='block'; }
 }
 function doLogout(){
-  AUTH.token=''; try{localStorage.removeItem('evosint-token');}catch{}
+  AUTH.token=''; TokenStore.del();
+  try{ localStorage.removeItem('evosint-me'); }catch{}
   refreshMe(); toast('Logged out — guest mode');
 }
 async function changePw(){
@@ -205,6 +226,7 @@ function injectAuth(){
     <div id="auth-login">
       <div class="field"><label>Username</label><input id="li-user" autocomplete="username" placeholder="evo"></div>
       <div class="field"><label>Password</label><input id="li-pass" type="password" autocomplete="current-password"></div>
+      <label class="checkline"><input type="checkbox" id="li-remember" checked> Remember me on this device</label>
       <div class="brow"><button class="btn" id="liGo">Log in ▸</button></div>
     </div>
     <div id="auth-signup" style="display:none">
@@ -254,6 +276,7 @@ function show(v){
   $('#vtitle').childNodes[0].textContent = VIEW_TITLES[v][0];
   $('#vsub').textContent = VIEW_TITLES[v][1];
   $('#side').classList.remove('open');
+  const sb = document.getElementById('sideback'); if(sb) sb.classList.remove('open');
   if(v==='graph') renderGraph();
   if(v==='dash') renderDash();
 }
@@ -1102,6 +1125,7 @@ function bindPal(){
 buildViews();
 $$('[data-caseno]').forEach(el=>el.textContent=S.caseNo);
 injectAuth();
+loadMeSnapshot(); paintAccount(); // instant: last-known identity before network confirms
 renderNav();
 mountCards();
 renderApiDocs();
@@ -1111,7 +1135,8 @@ loadCatalog();
 refreshMe();
 show('dash');
 
-$('#burger').onclick = ()=>$('#side').classList.toggle('open');
+$('#burger').onclick = ()=>{ $('#side').classList.toggle('open'); const sb = document.getElementById('sideback'); if(sb) sb.classList.toggle('open'); };
+$('#sideback').onclick = ()=>{ $('#side').classList.remove('open'); document.getElementById('sideback').classList.remove('open'); };
 $('#sgo').onclick = ()=>runSearch();
 $('#sin').addEventListener('keydown',e=>{ if(e.key==='Enter') runSearch(); });
 $$('#stabs .fbtn').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));

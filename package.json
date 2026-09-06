@@ -1,6 +1,6 @@
 {
   "name": "evosint",
-  "version": "2.8.0",
+  "version": "2.10.0",
   "description": "A web-based OSINT (Open Source Intelligence) investigation platform",
   "main": "backend/server.js",
   "scripts": {
@@ -27,6 +27,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@vercel/kv": "^3.0.0",
     "axios": "^1.7.2",
     "compression": "^1.7.4",
     "cors": "^2.8.5",

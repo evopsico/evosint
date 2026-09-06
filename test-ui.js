@@ -89,6 +89,47 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   if (lo) { lo.click(); await sleep(1500); }
   check('logout -> guest chip', (q('#acctChip') || {}).textContent?.includes('Guest'), (q('#acctChip') || {}).textContent?.trim());
 
+  // 5) persistence: fresh boot restores the account (re-login via UI first)
+  T().openAuth('login');
+  await sleep(300);
+  q('#li-user').value = uname;
+  q('#li-pass').value = 'UiTestPass1!';
+  q('#liGo').click();
+  await sleep(2500);
+  const savedTok = dom.window.localStorage.getItem('evosint-token') || '';
+  const savedMe = dom.window.localStorage.getItem('evosint-me') || '';
+  check('re-login works', (q('#acctChip') || {}).textContent?.includes(uname));
+  async function freshBoot(seed, offline) {
+    const errs = [];
+    const v2 = new VirtualConsole();
+    v2.on('jsdomError', (e) => errs.push(String(e.message || e).slice(0, 200)));
+    const shell = (await get('/')).body.replace(/<script src="\/public\/app\.js[^"]*"><\/script>/, '');
+    const d2 = new JSDOM(shell, { url: BASE + '/', runScripts: 'dangerously', pretendToBeVisual: true, virtualConsole: v2 });
+    d2.window.fetch = offline
+      ? () => Promise.reject(new Error('offline-sim'))
+      : (u, o) => globalThis.fetch(new URL(u, d2.window.location.href).toString(), o);
+    d2.window.AbortController = AbortController;
+    if (seed && seed.tok) d2.window.localStorage.setItem('evosint-token', seed.tok);
+    if (seed && seed.me) d2.window.localStorage.setItem('evosint-me', seed.me);
+    d2.window.eval(appJs + '\n;window.__T={openAuth,show,TOOLS,AUTH,S,apiGet};');
+    await sleep(2500);
+    return { d2, errs };
+  }
+  // B: token only, network live -> session restores from server
+  let b = await freshBoot({ tok: savedTok });
+  check('restart restores login (server)', ((s) => s && s.textContent && s.textContent.includes(uname))(b.d2.window.document.querySelector('#acctChip')), 'chip=' + (((b.d2.window.document.querySelector('#acctChip') || {}).textContent) || '').trim());
+  check('no errors on restored boot', b.errs.length === 0, b.errs.slice(0, 1).join(';;'));
+  // C: token + snapshot, network dead -> instant snapshot paint
+  b = await freshBoot({ tok: savedTok, me: savedMe }, true);
+  check('offline boot still shows account (snapshot)', ((s) => s && s.textContent && s.textContent.includes(uname))(b.d2.window.document.querySelector('#acctChip')));
+
+  // 6) mobile shell wiring
+  check('drawer backdrop present', !!q('#sideback'));
+  q('#burger').click(); await sleep(200);
+  check('burger opens drawer', q('#side').classList.contains('open'));
+  q('#sideback').click(); await sleep(200);
+  check('backdrop tap closes drawer', !q('#side').classList.contains('open'));
+
   console.log(failures === 0 ? '\nALL UI TESTS GREEN' : `\n${failures} FAILURES`);
   srv.kill();
   process.exit(failures === 0 ? 0 : 1);

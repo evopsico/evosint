@@ -36,16 +36,16 @@ function verifyPassword(password, rec) {
 }
 
 // ---------- session tokens (HMAC-signed, 30 days) ----------
-function signToken(uid) {
+async function signToken(uid) {
   const payload = Buffer.from(JSON.stringify({ uid, iat: Date.now(), exp: Date.now() + 30 * 864e5 })).toString('base64url');
-  const sig = crypto.createHmac('sha256', store.getSecret()).update('v1.' + payload).digest('hex');
+  const sig = crypto.createHmac('sha256', await store.getSecret()).update('v1.' + payload).digest('hex');
   return `v1.${payload}.${sig}`;
 }
-function readToken(token) {
+async function readToken(token) {
   try {
     const parts = String(token || '').split('.');
     if (parts.length !== 3 || parts[0] !== 'v1') return null;
-    const sig = crypto.createHmac('sha256', store.getSecret()).update(parts[0] + '.' + parts[1]).digest('hex');
+    const sig = crypto.createHmac('sha256', await store.getSecret()).update(parts[0] + '.' + parts[1]).digest('hex');
     if (!crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(parts[2], 'hex'))) return null;
     const p = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
     if (!p.uid || p.exp < Date.now()) return null;
@@ -55,7 +55,7 @@ function readToken(token) {
 
 // ---------- seed owner account on first boot ----------
 async function ensureSeed() {
-  const users = store.loadUsers();
+  const users = await store.loadUsers();
   if (Object.values(users).some((u) => u.username.toLowerCase() === 'evo')) return;
   if (Object.keys(users).length > 0) return; // never auto-seed into a non-empty db
   const pass = await hashPassword(process.env.EVO_ADMIN_PASS || 'aA12345678@');
@@ -64,7 +64,7 @@ async function ensureSeed() {
     id, username: process.env.EVO_ADMIN_USER || 'evo', pass,
     tier: 'super', left: Infinity, dob: null, created: new Date().toISOString(),
   };
-  store.saveUsers(users);
+  await store.saveUsers(users);
   console.log(`✓ seeded super account '${users[id].username}' (change password in Account panel)`);
 }
 
@@ -81,38 +81,38 @@ async function resolveIdentity(req) {
   const keyRaw = req.headers['x-api-key'] || req.query.key || req.query.api_key;
   if (keyRaw) {
     const digest = crypto.createHash('sha256').update(String(keyRaw)).digest('hex');
-    const keys = store.loadKeys();
+    const keys = await store.loadKeys();
     const k = keys.find((x) => x.hash === digest);
     if (!k) return { kind: 'key', valid: false };
-    const users = store.loadUsers();
+    const users = await store.loadUsers();
     k.last_used = new Date().toISOString();
-    store.saveKeys(keys);
+    await store.saveKeys(keys);
     return { kind: 'key', valid: true, keyId: k.id, userId: k.userId, username: users[k.userId]?.username || '?', tier: 'super', infinite: true, left: Infinity };
   }
   // 2) session token
   const auth = String(req.headers.authorization || '');
   const m = /^Bearer\s+(.+)$/.exec(auth);
   if (m) {
-    const p = readToken(m[1].trim());
+    const p = await readToken(m[1].trim());
     if (!p) return { kind: 'token', valid: false };
-    const users = store.loadUsers();
+    const users = await store.loadUsers();
     const u = users[p.uid];
     if (!u) return { kind: 'token', valid: false };
     return { kind: 'user', valid: true, userId: u.id, username: u.username, tier: u.tier, infinite: u.tier === 'super', left: u.tier === 'super' ? Infinity : u.left };
   }
   // 3) guest bucket by IP
   const ip = clientIp(req);
-  const guests = store.loadGuests();
-  if (!guests[ip]) { guests[ip] = { left: TIERS.guest.quota, seen: new Date().toISOString() }; store.saveGuests(guests); }
+  const guests = await store.loadGuests();
+  if (!guests[ip]) { guests[ip] = { left: TIERS.guest.quota, seen: new Date().toISOString() }; await store.saveGuests(guests); }
   return { kind: 'guest', valid: true, username: 'Guest', tier: 'guest', infinite: false, left: guests[ip].left, ip };
 }
-function persistLeft(ident, left) {
+async function persistLeft(ident, left) {
   if (ident.kind === 'user') {
-    const users = store.loadUsers();
-    if (users[ident.userId]) { users[ident.userId].left = left; store.saveUsers(users); }
+    const users = await store.loadUsers();
+    if (users[ident.userId]) { users[ident.userId].left = left; await store.saveUsers(users); }
   } else if (ident.kind === 'guest') {
-    const guests = store.loadGuests();
-    if (guests[ident.ip]) { guests[ident.ip].left = left; store.saveGuests(guests); }
+    const guests = await store.loadGuests();
+    if (guests[ident.ip]) { guests[ident.ip].left = left; await store.saveGuests(guests); }
   }
 }
 
@@ -135,10 +135,10 @@ async function quotaMiddleware(req, res, next) {
           timestamp: new Date().toISOString(),
         });
       }
-      const after = ident.left - 1; // charge upfront…
-      persistLeft(ident, after);
+      const after = ident.left - 1; // charge upfront (awaited: no double-spend races)…
+      await persistLeft(ident, after);
       res.setHeader('X-Searches-Left', String(after));
-      res.on('finish', () => { if (res.statusCode >= 500) persistLeft(ident, after + 1); }); // …refund on server failure
+      res.on('finish', () => { if (res.statusCode >= 500) persistLeft(ident, after + 1).catch(() => {}); }); // …refund on server failure
     } else {
       res.setHeader('X-Searches-Left', 'infinite');
     }
@@ -184,15 +184,15 @@ router.post('/signup', async (req, res) => {
   if (password.toLowerCase() === username.toLowerCase()) return fail(res, 400, 'Password must differ from username');
   if (repeat !== undefined && repeat !== '' && repeat !== password) return fail(res, 400, 'Passwords do not match');
   if (req.body?.dob !== undefined && !dob) return fail(res, 400, 'Date of birth invalid (YYYY-MM-DD, age 13+, not future)');
-  const users = store.loadUsers();
+  const users = await store.loadUsers();
   if (Object.values(users).some((u) => u.username.toLowerCase() === username.toLowerCase())) {
     return fail(res, 409, 'Username is taken');
   }
   const pass = await hashPassword(password);
   const id = crypto.randomBytes(8).toString('hex');
   users[id] = { id, username, pass, tier: 'user', left: TIERS.user.quota, dob: dob || null, created: new Date().toISOString() };
-  store.saveUsers(users);
-  return ok(res, { token: signToken(id), username, tier: 'user', searches_left: TIERS.user.quota });
+  await store.saveUsers(users);
+  return ok(res, { token: await signToken(id), username, tier: 'user', searches_left: TIERS.user.quota });
 });
 
 // POST /api/auth/login { username, password }
@@ -206,7 +206,7 @@ router.post('/login', loginLimiter, async (req, res) => {
   if (!username || !password) return fail(res, 401, 'Invalid username or password');
   // Overlong input still pays one scrypt so even length can't be timed.
   if (password.length > 200) { await verifyPassword(password.slice(0, 64), DUMMY_PASS); return fail(res, 401, 'Invalid username or password'); }
-  const users = store.loadUsers();
+  const users = await store.loadUsers();
   const u = Object.values(users).find((x) => x.username.toLowerCase() === username.toLowerCase());
   // Exactly one scrypt on every path — equal cost for known/unknown/malformed accounts.
   const okPass = await verifyPassword(password, u && u.pass ? u.pass : DUMMY_PASS);
@@ -214,7 +214,7 @@ router.post('/login', loginLimiter, async (req, res) => {
     return fail(res, 401, 'Invalid username or password');
   }
   return ok(res, {
-    token: signToken(u.id), username: u.username, tier: u.tier,
+    token: await signToken(u.id), username: u.username, tier: u.tier,
     searches_left: u.tier === 'super' ? 'infinite' : u.left,
   });
 });
@@ -237,65 +237,68 @@ router.get('/me', async (req, res) => {
 router.post('/password', async (req, res) => {
   const auth = String(req.headers.authorization || '');
   const m = /^Bearer\s+(.+)$/.exec(auth);
-  const p = m && readToken(m[1].trim());
+  const p = m && await readToken(m[1].trim());
   if (!p) return fail(res, 401, 'Log in first');
-  const users = store.loadUsers();
+  const users = await store.loadUsers();
   const u = users[p.uid];
   if (!u) return fail(res, 401, 'Log in first');
   const next = String(req.body?.next || '');
   if (!(await verifyPassword(String(req.body?.current || ''), u.pass))) return fail(res, 401, 'Current password is wrong');
   if (next.length < 8 || next.length > 200) return fail(res, 400, 'New password must be 8–200 characters');
   u.pass = await hashPassword(next);
-  store.saveUsers(users);
+  await store.saveUsers(users);
   return ok(res, { changed: true });
 });
 
-function requireUser(req, res, next) {
-  const auth = String(req.headers.authorization || '');
-  const m = /^Bearer\s+(.+)$/.exec(auth);
-  const p = m && readToken(m[1].trim());
-  const users = store.loadUsers();
-  const u = p && users[p.uid];
-  if (!u) return fail(res, 401, 'Log in first');
-  req.user = u;
-  next();
+async function requireUser(req, res, next) {
+  try {
+    const auth = String(req.headers.authorization || '');
+    const m = /^Bearer\s+(.+)$/.exec(auth);
+    const p = m && await readToken(m[1].trim());
+    const users = await store.loadUsers();
+    const u = p && users[p.uid];
+    if (!u) return fail(res, 401, 'Log in first');
+    req.user = u;
+    next();
+  } catch (e) { next(e); }
 }
 function requireSuper(req, res, next) {
-  requireUser(req, res, () => {
-    if (req.user.tier !== 'super') return fail(res, 403, 'Super users only');
+  requireUser(req, res, (err) => {
+    if (err) return next(err);
+    if (!req.user || req.user.tier !== 'super') return fail(res, 403, 'Super users only');
     next();
   });
 }
 
 // GET /api/auth/keys — list my keys (super only; keys are infinite)
-router.get('/keys', requireSuper, (req, res) => {
-  const mine = store.loadKeys().filter((k) => k.userId === req.user.id)
+router.get('/keys', requireSuper, async (req, res) => {
+  const mine = (await store.loadKeys()).filter((k) => k.userId === req.user.id)
     .map((k) => ({ id: k.id, label: k.label, prefix: k.prefix, created: k.created, last_used: k.last_used || null }));
   return ok(res, mine, { count: mine.length });
 });
 
 // POST /api/auth/keys { label } — mint an infinite key (super only, full key shown ONCE)
-router.post('/keys', requireSuper, (req, res) => {
+router.post('/keys', requireSuper, async (req, res) => {
   const label = oneLine(req.body?.label || 'default', 60) || 'default';
   const raw = 'evk_' + crypto.randomBytes(24).toString('hex');
-  const keys = store.loadKeys();
+  const keys = await store.loadKeys();
   const rec = {
     id: crypto.randomBytes(8).toString('hex'), userId: req.user.id, label,
     hash: crypto.createHash('sha256').update(raw).digest('hex'),
     prefix: raw.slice(0, 12) + '…', created: new Date().toISOString(), last_used: null,
   };
   keys.push(rec);
-  store.saveKeys(keys);
+  await store.saveKeys(keys);
   return ok(res, { id: rec.id, label, key: raw, note: 'Copy it now — the full key is never shown again. Keys grant infinite searches.' });
 });
 
 // DELETE /api/auth/keys/:id — revoke (super only)
-router.delete('/keys/:id', requireSuper, (req, res) => {
-  const keys = store.loadKeys();
+router.delete('/keys/:id', requireSuper, async (req, res) => {
+  const keys = await store.loadKeys();
   const i = keys.findIndex((k) => k.id === req.params.id && k.userId === req.user.id);
   if (i < 0) return fail(res, 404, 'Key not found');
   keys.splice(i, 1);
-  store.saveKeys(keys);
+  await store.saveKeys(keys);
   return ok(res, { revoked: true });
 });
 

@@ -1,0 +1,10 @@
+# Normalize line endings so Windows/macOS/Linux checkouts stay clean.
+* text=auto
+*.js text eol=lf
+*.json text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.md text eol=lf
+*.bat text eol=crlf
+*.hta text eol=crlf
+*.txt text eol=crlf

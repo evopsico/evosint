@@ -215,11 +215,60 @@ code.k{font-family:var(--mono);background:#0c0d0f;border:1px solid var(--border)
 /* stress meter bars */
 .meter{height:10px;background:#141619;border:1px solid var(--border2);border-radius:6px;overflow:hidden;margin:4px 0 8px}
 .meter i{display:block;height:100%;background:#fafafa}
+/* ---------- tablet + mobile ---------- */
+.sideback{display:none}
+@media(max-width:1240px){
+  .side{width:208px}
+  .grid2{grid-template-columns:1fr}
+}
 @media(max-width:920px){
-  .side{position:fixed;left:-250px;transition:left .25s;height:100vh}.side.open{left:0}
+  .side{position:fixed;left:-260px;top:0;transition:left .25s;height:100vh;width:min(300px,84vw);z-index:40;box-shadow:30px 0 60px rgba(0,0,0,.6)}
+  .side.open{left:0}
+  .sideback.open{display:block;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:35}
   .burger{display:grid}
-  .row2{grid-template-columns:1fr}.grid,.grid2{grid-template-columns:1fr}
-  .view{padding:16px}.top{padding:11px 14px;flex-wrap:wrap}
+  .row2{grid-template-columns:1fr}
+  .grid,.grid2{grid-template-columns:1fr}
+  .view{padding:16px}
+  .top{padding:11px 14px;flex-wrap:wrap;row-gap:10px}
+  .top h2{font-size:16px}
+  .qsearch{order:5;flex-basis:100%;max-width:none}
   .stamp{display:none}
+  .casehead{padding:11px 14px}
+  .superbox{padding:16px}
+  .field input,.field select,.field textarea,.qsearch input,.superbox input{font-size:16px}
+  .btn,.ghost{min-height:44px}
+  .nav button{padding:12px;min-height:44px}
+  .mini{padding:8px 12px}
+  .rbody{max-height:62vh}
+  .toasts{left:16px;right:16px;transform:none;align-items:stretch}
+  .toast{text-align:center}
+  .pal-back{padding:6vh 10px 10px}
+  .drawer{width:min(380px,100vw)}
+  .hero{padding:20px}
+}
+@media(max-width:560px){
+  .kv{grid-template-columns:1fr;gap:2px}
+  .kv dt{font-size:9px}
+  .mods{grid-template-columns:repeat(2,1fr)}
+  .mod{padding:9px 10px}
+  .mod div{min-width:0}
+  .mod b{font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mod small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mod img{width:22px;height:22px}
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .stat{padding:12px 13px}
+  .stat .v{font-size:20px}
+  .top h2 small{display:none}
+  .tbl{font-size:11px}
+  .tbl th,.tbl td{padding:6px 7px}
+  .superbox input{padding:13px 14px}
+  .expwrap{gap:14px}
+  .plat h4{font-size:12px}
+  .chead h3{font-size:13.5px}
+  .card{padding:16px}
+  .view{padding:12px}
+}
+@media(pointer:coarse){
+  .nav button,.btn,.ghost,.mini,.fbtn,.iconbtn{min-height:44px}
 }
 @media print{.side,.top,.brow,.drawer,.toasts,.foot,.pal-back,.classif{display:none!important}.view{display:block!important}}

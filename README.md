@@ -1,4 +1,4 @@
-# Evosint v2.8 — "Ghost" Monochrome Console (fictional agency theme)
+# Evosint v2.10 — "Ghost" Monochrome Console (fictional agency theme)
 
 A pure black-and-white case-file interface — no gradients, no purple, no gold — **an obvious parody/training build, not affiliated with the CIA, FBI, or
 any government agency**. Under the theme: **~100 API endpoints + 177-engine sweep
@@ -22,6 +22,29 @@ UI tests: `node test-ui.js` (boots the real server headlessly, renders every vie
 runs a full signup→logout flow — must print ALL UI TESTS GREEN).
 Sharing: see `SHARE.txt` — same-WiFi IP, free Cloudflare Tunnel link, or VPS.
 Set `TRUST_PROXY=1` behind any proxy/tunnel and `DISABLE_STRESS=1` on public instances.
+
+## Deploy to Vercel (public link, free tier)
+
+The repo ships Vercel-ready: static console + the Express API as one serverless
+function (`api/index.js`, 60s `maxDuration`).
+
+1. Push this folder to GitHub (see below), then on vercel.com: **Add New →
+   Project → Import** the repo. Framework preset: **Other**. No build command,
+   output directory: repo root (default static). Deploy.
+2. **Storage (required, 2 clicks):** serverless functions have no disk, so
+   accounts/quotas need Vercel KV — dashboard: **Storage → Create Database →
+   KV**, connect it to the project, redeploy. Then set env var `STORE=vercel-kv`.
+   Without this, auth endpoints fail fast with setup instructions instead of
+   silently losing data. Local dev keeps using `backend/data/` files (`STORE=file`).
+3. Copy the env keys you use (`HIBP_API_KEY`, `GITHUB_TOKEN`, …) plus a long
+   random `SESSION_SECRET` into the project's Environment Variables. Never
+   commit `.env` (already git-ignored, like `backend/data/` and `.vercel/`).
+4. First cold start seeds the owner login (override with `EVO_ADMIN_USER` /
+   `EVO_ADMIN_PASS` env before deploying, then change the password in-app).
+5. Honest limits on serverless: quick lookups fly, but multi-minute sweeps
+   (username/WMN sweeps, DNS brute-force, takeovers) can hit the function
+   timeout — run those against your local instance, or raise `maxDuration`
+   (needs a Pro plan past the free allowance).
 Caching: the server sends `Cache-Control: no-store` on everything and stamps asset
 URLs with the package version, so edits appear on plain reload — no hard refresh needed.
 
@@ -37,6 +60,12 @@ URLs with the package version, so edits appear on plain reload — no hard refre
 - Passwords are scrypt-hashed; sessions are HMAC-signed 30-day tokens; API keys are `evk_…` (SHA-256 stored, full key shown once, infinite scans, super-only minting, revocable).
 - Every scan response carries `X-Searches-Left` / `X-Tier`; exhausted quotas return HTTP 402 and the UI opens the login modal. Auth data lives in `backend/data/` (git-ignored).
 - Dashboard greets you by your chosen username once logged in.
+- Sessions persist: "Remember me" (default) survives browser restarts; unticked
+  logins last for the tab session only. The dashboard paints your last-known
+  identity instantly, then confirms with the server (works offline).
+- Fully responsive: sidebar becomes a swipe-away drawer with backdrop on tablets
+  and phones, grids collapse, touch targets hit 44px, inputs stay at 16px so iOS
+  never auto-zooms.
 
 ## Console views
 
