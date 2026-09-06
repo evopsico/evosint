@@ -26,7 +26,7 @@ Set `TRUST_PROXY=1` behind any proxy/tunnel and `DISABLE_STRESS=1` on public ins
 ## Deploy to Vercel (public link, free tier)
 
 The repo ships Vercel-ready: static console + the Express API as one serverless
-function (`api/index.js`, 60s `maxDuration`).
+catch-all function (`api/[...all].js`, 60s `maxDuration`, no rewrites needed).
 
 1. Push this folder to GitHub (see below), then on vercel.com: **Add New →
    Project → Import** the repo. Framework preset: **Other**. No build command,
