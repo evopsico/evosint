@@ -30,7 +30,7 @@ let pass = 0, total = 0;
 function check(n, c, x) { total++; if (c) pass++; console.log((c ? 'PASS' : 'FAIL') + ' live ' + n + (x ? ' | ' + x : '')); }
 (async () => {
   let r = await req('GET', '/api/health');
-  check('health 2.13.1', r.s === 200 && r.j && r.j.version === '2.13.1');
+  check('health 2.14.0', r.s === 200 && r.j && r.j.version === '2.14.0');
   const un = 'livefull' + Date.now().toString(36);
   r = await req('POST', '/api/auth/signup', { username: un, password: 'LiveFull12!', repeat: 'LiveFull12!', dob: '1990-06-06' });
   const tok0 = r.j && r.j.data && r.j.data.token;
@@ -56,6 +56,12 @@ function check(n, c, x) { total++; if (c) pass++; console.log((c ? 'PASS' : 'FAI
   r = await req('GET', '/api/recon/certs?q=signal', null, H);
   if (r.s !== 200) r = await req('GET', '/api/recon/certs?q=mozilla', null, H);
   check('GET /api/recon/certs', r.s === 200 && Array.isArray((r.j || {}).data));
+  r = await req('GET', '/api/kitty/state', null, H);
+  check('GET /api/kitty/state', r.s === 200 && ((r.j || {}).data || {}).per === 1000);
+  r = await req('POST', '/api/kitty/click', { n: 7 }, H);
+  check('POST /api/kitty/click', r.s === 200 && ((r.j || {}).data || {}).clicks === 7);
+  r = await req('GET', '/api/world/geo?q=Berlin', null, H);
+  check('GET /api/world/geo', r.s === 200 && (((r.j || {}).data || [])[0] || {}).name === 'Berlin');
   console.log(`\nLIVE ${pass}/${total}`);
   process.exit(pass === total ? 0 : 1);
 })();

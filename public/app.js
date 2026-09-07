@@ -384,9 +384,9 @@ function injectAuth(){
 /* ---------- nav / views ---------- */
 const NAV = [
   ['sec','Console'],
-  ['dash','◈','Dashboard'], ['search','◎','Search'], ['modules','▦','Modules',''], ['graph','⬡','Investigate',''], ['linkmap','🕸','Link Map'],
+  ['dash','◈','Dashboard'], ['search','◎','Search'], ['modules','▦','Modules',''], ['graph','⬡','Investigate',''], ['linkmap','🕸','Link Map'], ['kitty','🐈‍⬛','Kitty'],
   ['sec','Intel'],
-  ['breach','✉','Breaches'], ['people','👤','People'], ['net','🌐','Network'], ['threat','☢','Threat Intel'],
+  ['breach','✉','Breaches'], ['people','👤','People'], ['net','🌐','Network'], ['threat','☢','Threat Intel'], ['world','🌍','World'],
   ['oath','🔑','OathNet'],
   ['geo','📍','Geo'], ['crypto','₿','Crypto'], ['company','🏢','Company'],
   ['sec','Field Ops'],
@@ -395,7 +395,7 @@ const NAV = [
   ['lab','🧪','Forensics & Utils'], ['api','⎔','API Docs'],
 ];
 let current = 'dash';
-const VIEW_TITLES = { dash:['Dashboard','Ops overview & exposure meter'], search:['Search','Supernova-style multi-engine battery'], modules:['Modules','Site-engine grid — username presence at scale'], graph:['Investigate','Entity relationship graph'], linkmap:['Link Map','One identity → linked accounts, hop by hop'], breach:['Breaches','Breach & credential exposure'], people:['People','Usernames, gamers, devs, profiles'], net:['Network','Infrastructure & web intel'], threat:['Threat Intel','Malware, vulns, reputation feeds'], oath:['OathNet','OAuth · OIDC · SAML · secret scan'], geo:['Geo','Places, coordinates, postal areas'], crypto:['Crypto','Addresses, markets, fees'], company:['Company','Corporate resolution'], recon:['Field Recon','Crawler · brute-force · takeover · audits'], lab:['Forensics & Utils','Parsers, validators, generators'], api:['API Docs','Every endpoint, live'] };
+const VIEW_TITLES = { dash:['Dashboard','Ops overview & exposure meter'], search:['Search','Supernova-style multi-engine battery'], modules:['Modules','Site-engine grid — username presence at scale'], graph:['Investigate','Entity relationship graph'], linkmap:['Link Map','One identity → linked accounts, hop by hop'], kitty:['Kitty','Click the cat · 1,000 clicks = +20 scans'], breach:['Breaches','Breach & credential exposure'], people:['People','Usernames, gamers, devs, profiles'], net:['Network','Infrastructure & web intel'], threat:['Threat Intel','Malware, vulns, reputation feeds'], world:['World','Live planet: attacks, weather, time, news, conflict'], oath:['OathNet','OAuth · OIDC · SAML · secret scan'], geo:['Geo','Places, coordinates, postal areas'], crypto:['Crypto','Addresses, markets, fees'], company:['Company','Corporate resolution'], recon:['Field Recon','Crawler · brute-force · takeover · audits'], lab:['Forensics & Utils','Parsers, validators, generators'], api:['API Docs','Every endpoint, live'] };
 
 function renderNav(){
   $('#nav').innerHTML = NAV.map(n => n[0]==='sec' ? `<div class="nav-sec">${esc(n[1])}</div>`
@@ -413,6 +413,9 @@ function show(v){
   $$('#tabbar button').forEach(b=>b.classList.toggle('on', b.dataset.v===v));
   if(v==='graph') renderGraph();
   if(v==='linkmap') renderLinkMap();
+  if(v==='kitty') renderKitty();
+  if(v==='world') renderWorld(); else try{ worldStop(); }catch{}
+  if(v!=='kitty'){ try{ kitFlush(); }catch{} }
   if(v==='dash') renderDash();
 }
 
@@ -1297,6 +1300,158 @@ function lmToGraph(){
   show('graph'); toast(Math.min(all.length, 60) + ' nodes → Investigate');
 }
 
+/* ================= KITTY CLICKER ================= */
+// 1,000 clicks = +20 scans. Counting + payout are server-side (uncheatable);
+// the client only batches taps and paints. Clicks never cost scans.
+const KIT = { pending: 0, c: 0, miles: 0, capLeft: 10, inflight: false, timer: null };
+function kitPaint(){
+  const shown = KIT.c + KIT.pending;
+  const n = $('#kit-n'); if(!n) return;
+  n.textContent = shown.toLocaleString('en-US');
+  const bar = $('#kit-bar'); if(bar) bar.style.width = Math.min(100, shown / 10) + '%';
+  const m = $('#kit-miles'); if(m) m.textContent = KIT.miles + ' milestone' + (KIT.miles === 1 ? '' : 's');
+  const cap = $('#kit-cap'); if(cap) cap.textContent = KIT.capLeft + ' awards left today';
+  const b = $('#kit-bal'); if(b) b.textContent = (AUTH.left === Infinity ? '∞' : (AUTH.left ?? '—')) + ' scans';
+}
+function kitFloater(){
+  const stage = $('#kit-float'); if(!stage) return;
+  while(stage.childElementCount > 24) stage.firstChild.remove();
+  const s = document.createElement('span');
+  s.className = 'kit1'; s.textContent = '+1';
+  s.style.left = (15 + Math.random() * 70) + '%';
+  stage.appendChild(s);
+  s.addEventListener('animationend', ()=>s.remove());
+}
+function kitClick(){ KIT.pending++; kitPaint(); kitFloater(); kitKick(); }
+function kitKick(){
+  if(KIT.pending >= 25){ kitFlush(); return; }
+  if(!KIT.timer) KIT.timer = setTimeout(()=>{ KIT.timer = null; kitFlush(); }, 1500);
+}
+async function kitFlush(){
+  if(KIT.inflight || KIT.pending <= 0) return;
+  KIT.inflight = true;
+  const n = Math.min(KIT.pending, 200);
+  try{
+    const d = await apiPost('/kitty/click', { n });
+    const x = d.data || {};
+    KIT.pending = Math.max(0, KIT.pending - n);
+    KIT.c = x.clicks ?? KIT.c;
+    KIT.miles = x.awards_today ?? KIT.miles;
+    KIT.capLeft = x.awards_left_today ?? KIT.capLeft;
+    if((x.earned || 0) > 0) kitAward(x.scans_added || 20);
+  }catch(e){ /* keep pending — next tick retries */ }
+  KIT.inflight = false;
+  kitPaint();
+  if(KIT.pending > 0) kitKick();
+}
+async function kitState(){
+  try{
+    const d = await apiGet('/kitty/state');
+    const x = d.data || {};
+    KIT.c = x.clicks || 0; KIT.miles = x.awards_today || 0; KIT.capLeft = x.awards_left_today ?? 10;
+  }catch(e){}
+  kitPaint();
+}
+function renderKitty(){ kitState(); }
+function kitAward(added){
+  const f = $('#kit-flash');
+  if(f){
+    f.textContent = '+' + added + ' SCANS — KITTY PROVIDES';
+    f.hidden = false;
+    clearTimeout(kitAward._t);
+    kitAward._t = setTimeout(()=>{ f.hidden = true; }, 2400);
+  }
+  toast('+' + added + ' scans — kitty provides');
+}
+
+/* ================= WORLD WATCH ================= */
+const WORLD = { clockT: null, autoT: null, off: 0 };
+const WPRESETS = ['Kyiv', 'Gaza', 'Khartoum', 'Berlin', 'Tokyo', 'New York'];
+const WXEMOJI = { 'Clear sky': '☀', 'Mainly clear': '🌤', 'Partly cloudy': '⛅', 'Overcast': '☁', 'Fog': '🌫', 'Icy fog': '🌫' };
+function wxEmoji(label){
+  if(WXEMOJI[label]) return WXEMOJI[label];
+  if(/Thunder|Storm/.test(label)) return '🌩';
+  if(/Snow/.test(label)) return '🌨';
+  if(/Rain|Shower|Drizzle/.test(label)) return '🌧';
+  return '🌡';
+}
+function renderWorld(){
+  const pr = $('#w-presets');
+  if(pr && !pr.dataset.done){
+    pr.dataset.done = '1';
+    pr.innerHTML = WPRESETS.map(p=>`<button class="mini" data-wp="${esc(p)}">${esc(p)}</button>`).join('');
+    $$('#w-presets [data-wp]').forEach(b=>b.onclick=()=>{ $('#w-q').value = b.dataset.wp; wGeo(true); });
+  }
+}
+function worldStop(){
+  if(WORLD.clockT){ clearInterval(WORLD.clockT); WORLD.clockT = null; }
+  if(WORLD.autoT){ clearInterval(WORLD.autoT); WORLD.autoT = null; const a = $('#w-auto'); if(a){ a.textContent = 'Auto: off'; a.classList.remove('on'); } }
+}
+function wSpin(el, msg){ el.innerHTML = `<div class="load"><div class="spin"></div>${esc(msg)}</div>`; }
+async function wGeo(auto){
+  const q = $('#w-q').value.trim();
+  if(q.length < 2){ toast('Enter a city or country'); return; }
+  const box = $('#w-geo'); wSpin(box, 'Locating…');
+  try{
+    const d = await apiGet('/world/geo?q=' + encodeURIComponent(q));
+    const list = d.data || [];
+    if(!list.length){ box.innerHTML = '<p style="color:var(--faint)">No matches — try another spelling.</p>'; return; }
+    box.innerHTML = '<div style="display:flex;gap:6px;flex-wrap:wrap">' + list.map((g, i)=>`<button class="mini" data-gi="${i}">${esc(g.name)}${g.admin1 ? ', ' + esc(g.admin1) : ''} · ${esc(g.country)}</button>`).join('') + '</div>';
+    $$('#w-geo [data-gi]').forEach(b=>b.onclick=()=>wPlace(list[+b.dataset.gi]));
+    if(auto && list.length) wPlace(list[0]);
+  }catch(e){ box.innerHTML = `<div class="load">❌ ${esc(e.message)}</div>`; }
+}
+async function wPlace(g){
+  const wx = $('#w-wx'), ck = $('#w-clock'), nw = $('#w-news'), cf = $('#w-conf');
+  wSpin(wx, 'Reading the sky…'); wSpin(nw, 'Scanning the wire…'); wSpin(cf, 'Scanning the wire…');
+  ck.textContent = '--:--:--';
+  try{
+    const d = await apiGet(`/world/place?lat=${g.lat}&lon=${g.lon}&name=${encodeURIComponent(g.name)}&country=${encodeURIComponent(g.country || '')}`, 60000);
+    const x = d.data || {}, w = x.weather || {};
+    $('#w-wxsub').textContent = `${g.name}${g.country ? ', ' + g.country : ''} · ${esc(w.timezone || '')}`;
+    wx.innerHTML = w.temp === undefined ? '<p style="color:var(--faint)">Weather unavailable.</p>'
+      : `<div style="display:flex;align-items:center;gap:12px"><span style="font-size:40px">${wxEmoji(w.label || '')}</span><span class="wxbig">${esc(Math.round(w.temp))}°</span><b>${esc(w.label || '')}</b></div>`
+      + kv({ 'Feels like': esc(Math.round(w.feels ?? w.temp)) + '°', 'Wind': esc(w.wind ?? '—') + ' km/h', 'Humidity': esc(w.humidity ?? '—') + '%', 'Pressure': esc(w.pressure ?? '—') + ' hPa' })
+      + ((w.daily || []).length ? `<div class="sect">Next days</div><div class="wday">` + w.daily.map(t=>`<div><b>${esc(String(t.date || '').slice(5))}</b><br>${esc(wxEmoji(t.label || ''))} ${esc(t.label || '')}<br><span style="color:var(--muted)">${esc(t.tmax ?? '?')}° / ${esc(t.tmin ?? '?')}°${t.precip ? ' · ☂' + esc(t.precip) + '%' : ''}</span></div>`).join('') + '</div>' : '');
+    WORLD.off = w.utc_offset_seconds || 0;
+    $('#w-tzsub').textContent = (w.timezone || '—') + ' · UTC' + (WORLD.off >= 0 ? '+' : '−') + Math.abs(WORLD.off / 3600);
+    if(WORLD.clockT) clearInterval(WORLD.clockT);
+    const tick = ()=>{
+      const t = new Date(Date.now() + WORLD.off * 1000);
+      ck.textContent = t.toISOString().slice(11, 19);
+      const dt = $('#w-date'); if(dt) dt.textContent = t.toISOString().slice(0, 10);
+    };
+    tick(); WORLD.clockT = setInterval(tick, 1000);
+    wFeed(nw, x.news, 'No fresh zone news right now.');
+    wFeed(cf, x.conflict, 'No conflict-keyword hits in the latest zone news.');
+    $('#w-newssub').textContent = `freshest from ${g.name} · via ${esc((x.sources || {}).news || '?')}`;
+    pushHist('World zone', g.name, 'world', true);
+  }catch(e){
+    wx.innerHTML = `<div class="load">❌ ${esc(e.message)}</div>`;
+    nw.innerHTML = ''; cf.innerHTML = '';
+    try{ pushHist('World zone', g.name, 'world', false); }catch{}
+  }
+}
+function wFeed(el, items, empty){
+  if(!items || !items.length){ el.innerHTML = `<p style="color:var(--faint)">${esc(empty)}</p>`; return; }
+  el.innerHTML = items.map(a=>`<div class="witem">${link(a.url, a.title)}<div class="wmeta">${esc(a.domain || '')}${a.date ? ' · ' + esc(a.date.slice(0, 4) + '-' + a.date.slice(4, 6) + '-' + a.date.slice(6, 8)) : ''}</div></div>`).join('');
+}
+async function wAttacks(){
+  const box = $('#w-atk'); wSpin(box, 'Pulling live C2s + KEV…');
+  try{
+    const d = await apiGet('/world/attacks', 60000);
+    const x = d.data || {};
+    $('#w-fam').innerHTML = ((x.families || []).length ? `<div class="sect">Hottest C2 families</div>` : '')
+      + (x.families || []).map(f=>`<div class="wrow"><span>${esc(f.name)}</span><div class="wbar"><i style="width:${f.share || 0}%"></i></div><b>${esc(f.count)}</b></div>`).join('');
+    $('#w-attsub').textContent = `${esc(x.c2_count ?? 0)} live C2s · ${(x.kev_fresh || []).length} fresh CVEs`;
+    box.innerHTML = `<div class="sect">Live botnet C2s (Feodo)</div>`
+      + (((x.c2 || []).length ? tbl(['C2 IP', 'Malware', 'Last online'], x.c2.map(c=>[`<span class="mono" style="border:none;background:none;padding:0">${esc(c.ip)}</span>`, esc(c.malware), esc((c.last_online || '').slice(0, 10) || '—')])) : '<p style="color:var(--faint)">No C2s right now.</p>'))
+      + `<div class="sect">Freshly exploited CVEs (CISA KEV)</div>`
+      + (((x.kev_fresh || []).length ? tbl(['CVE', 'Target', 'Added', ''], x.kev_fresh.map(v=>[`<span class="mono" style="border:none;background:none;padding:0">${esc(v.cve)}</span>`, esc([v.vendor, v.product].filter(Boolean).join(' ') || v.name), esc((v.date_added || '').slice(0, 10)), v.ransomware ? badge('ransomware', 'r') : ''])) : '<p style="color:var(--faint)">KEV unreachable.</p>'));
+    pushHist('Attack telemetry', 'feodo+kev', 'world', true);
+  }catch(e){ box.innerHTML = `<div class="load">❌ ${esc(e.message)}</div>`; try{ pushHist('Attack telemetry', 'feodo+kev', 'world', false); }catch{} }
+}
+
 /* ================= DASH / HISTORY / API DOCS ================= */
 // Animated counters (skip animation for reduced-motion users).
 function countUp(el, to){
@@ -1360,7 +1515,9 @@ const API_DOCS = [
  ['POST','/api/forensics/email-header','Header parse'],['POST','/api/forensics/iban','IBAN mod-97'],['POST','/api/forensics/card','Luhn + brand'],
  ['POST','/api/forensics/hash-id','Hash identify'],['GET','/api/forensics/vin/:vin','NHTSA decode'],['GET','/api/forensics/mac/:mac','OUI vendor'],
  ['GET','/api/lab/limits','Stress caps'],['POST','/api/lab/stress','Capped load test (confirm)'],
- ['GET','/api/company/:name','Wikidata + Wikipedia'],
+  ['GET','/api/company/:name','Wikidata + Wikipedia'],
+  ['GET','/api/kitty/state','Clicker counter (free)'],['POST','/api/kitty/click','Batch clicks · 1,000 = +20 scans (free)'],
+  ['GET','/api/world/geo?q=','Place search (Open-Meteo)'],['GET','/api/world/place?lat=&lon=&name=','Weather + clock + news + conflict wire'],['GET','/api/world/attacks','Live C2s + fresh KEV'],
  ['POST','/api/recon/crawl','Same-origin crawler'],['POST','/api/recon/dns-brute','Built-in DNS brute-force'],['POST','/api/recon/subdomains','4-source sub aggregator'],['GET','/api/recon/wmn/:u','WhatsMyName 700 sweep'],
  ['POST','/api/recon/chase','Name→email chase'],['POST','/api/recon/wpcheck','WordPress audit'],['POST','/api/recon/takeover','Subdomain takeover'],['POST','/api/recon/goldmine','Wayback sensitive files'],
  ['GET','/api/recon/emailsec/:domain','SPF/DMARC/DKIM grade'],['POST','/api/recon/typosquat','Squat gen + DNS'],['GET','/api/recon/favicon-hash?url=','mmh3 Shodan pivot'],['GET','/api/recon/tor/:ip','Tor relay check'],['GET','/api/recon/pgp/:email','PGP keyservers'],  ['GET','/api/recon/github-code?q=','GH code (token)'],
@@ -1431,6 +1588,26 @@ function buildViews(){
     <div class="brow"><input id="lm-seed" placeholder="username, email, or domain…" style="flex:1;min-width:180px;padding:10px 14px;border-radius:10px;border:1px solid var(--border2);background:#000;color:var(--text);font-family:var(--mono);outline:none"><button class="btn" id="lm-go" style="flex:none">Map it ▸</button><button class="ghost" id="lm-tograph">Send to Investigate</button><button class="ghost" id="lm-clear">Clear</button></div>
     <div class="brow" style="margin-top:8px;align-items:center"><button class="mini" id="lmstats" title="tap to clear the trace">empty map</button><span style="flex:1"></span><button class="mini" id="lm-zout" title="zoom out">−</button><button class="mini" id="lm-zin" title="zoom in">+</button><button class="mini" id="lm-zfit" title="fit to width">fit</button><button class="mini" id="lm-home" title="scroll to root">⌂ root</button></div></div>
     <div class="lmscroll" id="lmscroll"><div id="lmtree"><p style="padding:34px;text-align:center;color:var(--faint)">Start from one <b>username</b>, <b>email</b>, or <b>domain</b> above.</p></div></div>`) +
+  v('kitty', `<div class="casehead"><span class="no">ARCADE</span><span class="stamp">Kitty · Fictional</span></div>
+  <div class="card" style="margin-bottom:12px;text-align:center"><div class="brow" style="justify-content:center"><span class="pill" id="kit-bal">— scans</span><span class="pill" id="kit-miles">0 milestones</span><span class="pill" id="kit-cap">10 awards/day</span></div>
+    <div id="kit-n">0</div>
+    <div style="color:var(--faint);font-size:12.5px">/ 1,000 clicks → <b style="color:#fff">+20 scans</b></div>
+    <div class="pbar" style="max-width:440px;margin:10px auto 4px"><i id="kit-bar" style="width:0%"></i></div>
+    <div id="kit-stage"><button id="kit-btn" aria-label="pet the kitty">🐈‍⬛</button><div id="kit-float"></div></div>
+    <p style="color:var(--faint);font-size:11.5px;margin-top:10px">Server-counted, uncheatable · max 10 awards a day · clicks are free, awards land instantly</p></div>
+  <div id="kit-flash" class="kitflash" hidden>+20 SCANS</div>`) +
+  v('world', `<div class="casehead"><span class="no">WORLD WATCH</span><span class="stamp">Live planet · Fictional</span></div>
+  <div class="card" style="margin-bottom:12px"><div class="chead"><div class="cico">🌍</div><div><h3>Zone</h3><p>Weather, local time, news and conflict wire for any place on Earth.</p></div></div>
+    <div class="brow"><input id="w-q" placeholder="city or country…" style="flex:1;min-width:180px;padding:10px 14px;border-radius:10px;border:1px solid var(--border2);background:#000;color:var(--text);outline:none"><button class="btn" id="w-go" style="flex:none">Locate ▸</button></div>
+    <div class="brow" id="w-presets" style="margin-top:8px"></div>
+    <div id="w-geo" style="margin-top:8px"></div></div>
+  <div class="grid2"><div class="card"><div class="chead"><div class="cico">🌡</div><div><h3>Weather</h3><p id="w-wxsub">pick a zone above</p></div></div><div id="w-wx"><p style="color:var(--faint)">—</p></div></div>
+  <div class="card"><div class="chead"><div class="cico">🕓</div><div><h3>Local time</h3><p id="w-tzsub">—</p></div></div><div id="w-clock" class="wclock">--:--:--</div><div id="w-date" style="color:var(--muted);font-size:12px"></div></div></div>
+  <div class="card" style="margin-top:12px"><div class="chead"><div class="cico">📰</div><div><h3>Local news</h3><p id="w-newssub">freshest from the zone</p></div></div><div id="w-news"><p style="color:var(--faint)">—</p></div></div>
+  <div class="card" style="margin-top:12px"><div class="chead"><div class="cico">⚠</div><div><h3>Conflict wire</h3><p>war · strikes · troops · ceasefire — keyword-filtered global wire</p></div></div><div id="w-conf"><p style="color:var(--faint)">—</p></div></div>
+  <div class="card" style="margin-top:12px"><div class="chead"><div class="cico">☢</div><div><h3>Attack telemetry</h3><p>live botnet C2s + freshly-exploited CVEs · 1 scan per pull</p></div></div>
+    <div class="brow"><button class="btn" id="w-atkgo" style="flex:none">Pull feed ▸</button><button class="ghost" id="w-auto">Auto: off</button><span class="pill" id="w-attsub">Feodo + CISA KEV</span></div>
+    <div id="w-fam" style="margin-top:8px"></div><div id="w-atk" style="margin-top:8px"></div></div>`) +
   v('breach', `<div class="grid" data-cards="breach"></div>`) +
   v('people', `<div class="grid" data-cards="people"></div>`) +
   v('net', `<div class="grid" data-cards="net"></div>`) +
@@ -1638,6 +1815,16 @@ $('#lm-zout').onclick = ()=>lmZoom(-0.25);
 $('#lm-zfit').onclick = lmFit;
 $('#lm-home').onclick = lmHome;
 $('#lmstats').onclick = ()=>{ if(LM.sel){ LM.sel = null; renderLinkMap(); } };
+$('#kit-btn').onclick = ()=>kitClick();
+$('#w-go').onclick = ()=>wGeo(false);
+$('#w-q').addEventListener('keydown', e=>{ if(e.key==='Enter') wGeo(false); });
+$('#w-atkgo').onclick = wAttacks;
+$('#w-auto').onclick = ()=>{
+  const a = $('#w-auto');
+  if(WORLD.autoT){ worldStop(); toast('Auto-refresh off'); return; }
+  wAttacks(); WORLD.autoT = setInterval(wAttacks, 60000);
+  a.textContent = 'Auto: on (1 scan/min)'; a.classList.add('on'); toast('Auto-refresh on — 1 scan/min');
+};
 let lmRzT = null;
 window.addEventListener('resize', ()=>{ clearTimeout(lmRzT); lmRzT = setTimeout(()=>{ const sc = $('#lmscroll'); if(!sc || !LM.root || !LM.nodes[LM.root]) return; const c = sc.clientWidth > 0 && sc.clientWidth < 640; if(c !== LM.compact){ LM.compact = c; renderLinkMap(); } }, 250); });
 // ---- case report builder (ticked entities → standalone HTML + Markdown) ----

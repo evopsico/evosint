@@ -57,7 +57,23 @@ function call(path, method = 'GET', body = null, headers = {}, timeout = 45000) 
     if (!bad) pass++;
     console.log(`${m} ${p} -> ${r.status} (${Date.now() - t0}ms)${r.headers['x-searches-left'] !== undefined ? ` [left=${r.headers['x-searches-left']}]` : ''} | ${r.body.replace(/\s+/g, ' ').slice(0, 200)}`);
   }
-  console.log(`\nPASS ${pass}/${tests.length}`);
+  console.log(`\nPASS ${pass}/${tests.length} (base)`);
+  // kitty: 1000 clicks in 5 batches -> +20 scans, balance agrees
+  const meBefore = J(await call('/api/auth/me', 'GET', null, H)).data.searches_left;
+  let earn = null;
+  for (let i = 0; i < 5; i++) { r = await call('/api/kitty/click', 'POST', { n: 200 }, H); earn = J(r).data; }
+  const kittyOk = earn && earn.earned === 1 && earn.scans_added === 20;
+  if (kittyOk) pass++;
+  console.log(`kitty 5x200 -> earned=${earn && earn.earned} added=${earn && earn.scans_added} | ${kittyOk ? 'AWARD OK' : 'AWARD FAIL'}`);
+  r = await call('/api/auth/me', 'GET', null, H);
+  const balOk = J(r).data.searches_left === meBefore + 20;
+  if (balOk) pass++;
+  console.log(`kitty balance ${meBefore} -> ${J(r).data.searches_left} | ${balOk ? 'OK' : 'FAIL'}`);
+  r = await call('/api/world/geo?q=Berlin', 'GET', null, H);
+  const geoOk = r.status === 200 && ((J(r).data || [])[0] || {}).name === 'Berlin';
+  if (geoOk) pass++;
+  console.log(`world geo Berlin -> ${r.status} | ${geoOk ? 'OK' : String(r.body).slice(0, 120)}`);
+  console.log(`\nPASS ${pass}/${tests.length + 3}`);
   server.kill();
-  setTimeout(() => process.exit(0), 500);
+  setTimeout(() => process.exit(pass === tests.length + 3 ? 0 : 1), 500);
 })();

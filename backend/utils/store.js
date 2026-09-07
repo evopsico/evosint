@@ -83,7 +83,7 @@ function kv() {
   }
   throw new Error('STORE=vercel-kv is set but no Redis/KV database is connected (neither KV_REST_API_URL nor UPSTASH_REDIS_REST_URL found). In Vercel: Storage/Marketplace → add Upstash Redis → connect it to this project → redeploy. Locally, unset STORE to use files.');
 }
-const K = { users: 'evosint:users', keys: 'evosint:keys', guests: 'evosint:guests', secret: 'evosint:secret' };
+const K = { users: 'evosint:users', keys: 'evosint:keys', guests: 'evosint:guests', secret: 'evosint:secret', kitty: 'evosint:kitty' };
 async function kLoad(key, fallback) {
   // Fail CLOSED: a Redis outage must 500 loudly, never silently reset
   // quotas or log everyone out by degrading to empty stores.
@@ -107,6 +107,10 @@ async function loadKeys() { return backendName() === 'vercel-kv' ? kLoad(K.keys,
 async function saveKeys(k) { return backendName() === 'vercel-kv' ? kSave(K.keys, k) : fSave('keys.json', k); }
 async function loadGuests() { return backendName() === 'vercel-kv' ? kLoad(K.guests, {}) : fLoad('guests.json', {}); }
 async function saveGuests(g) { return backendName() === 'vercel-kv' ? kSave(K.guests, g) : fSave('guests.json', g); }
+// kitty clicker state: { u: {uid: {c, day, awards}}, g: {ip: {...}} } — kept apart
+// from users/guests so backups, quotas and logins never touch the game.
+async function loadKitty() { return backendName() === 'vercel-kv' ? kLoad(K.kitty, { u: {}, g: {} }) : fLoad('kitty.json', { u: {}, g: {} }); }
+async function saveKitty(k) { return backendName() === 'vercel-kv' ? kSave(K.kitty, k) : fSave('kitty.json', k); }
 
 let secretWarned = false;
 async function getSecret() {
@@ -135,4 +139,4 @@ async function getSecret() {
   return s.v;
 }
 
-module.exports = { get DIR() { return dataDir(); }, dataDir, ensureDataDir, dataFile, loadUsers, saveUsers, loadKeys, saveKeys, loadGuests, saveGuests, getSecret, backendName };
+module.exports = { get DIR() { return dataDir(); }, dataDir, ensureDataDir, dataFile, loadUsers, saveUsers, loadKeys, saveKeys, loadGuests, saveGuests, loadKitty, saveKitty, getSecret, backendName };

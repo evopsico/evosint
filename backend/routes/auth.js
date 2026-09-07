@@ -12,7 +12,7 @@ const TIERS = {
   user: { label: 'User', quota: 50 },
   super: { label: 'Super', quota: Infinity },
 };
-const EXEMPT = [/^\/auth(\/|$)/, /^\/health\/?$/, /^\/lab\/limits\/?$/, /^\/username\/catalog\/list\/?$/];
+const EXEMPT = [/^\/auth(\/|$)/, /^\/health\/?$/, /^\/lab\/limits\/?$/, /^\/username\/catalog\/list\/?$/, /^\/kitty(\/|$)/];
 
 // Express 4 does not catch rejected async handlers (the connection just hangs
 // until the platform kills it). Every async route below runs inside `ah()` so
@@ -463,4 +463,4 @@ router.post('/backup/restore', requireSuper, async (req, res) => {
   return ok(res, { restored: true, users: Object.keys(d.users).length, keys: d.keys.length });
 });
 
-module.exports = { router, quotaMiddleware, resolveIdentity, ensureSeed, TIERS };
+module.exports = { router, quotaMiddleware, resolveIdentity, persistLeft, ensureSeed, TIERS };

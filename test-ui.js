@@ -60,7 +60,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   check('no uncaught JS errors', errors.length === 0, errors.slice(0, 2).join(' ;; ').slice(0, 300));
   check('nav rendered (15+ buttons)', qa('#nav button').length >= 15, qa('#nav button').length + ' buttons');
-  check('16 views mounted', qa('.view').length === 16, qa('.view').length + ' views');
+  check('18 views mounted', qa('.view').length === 18, qa('.view').length + ' views');
   check('tool cards mounted (60+)', qa('.card[data-card]').length >= 60, qa('.card[data-card]').length + ' cards');
   check('account chip injected', !!q('#acctChip'), (q('#acctChip') || { textContent: 'MISSING' }).textContent.trim());
   check('auth modal injected', !!q('#authBack'));
@@ -172,6 +172,21 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   T().lmReset(); T().renderLinkMap(); await sleep(200);
   check('empty state offers examples', !!q('#lmtree [data-ex="octocat"]'));
   T().lmReset(); T().renderLinkMap(); await sleep(200);
+  // 8) kitty: view mounts, taps count locally, state paints balance
+  T().show('kitty'); await sleep(2500);
+  check('kitty view mounted', q('#v-kitty').classList.contains('on') && !!q('#kit-btn') && !!q('#kit-n') && !!q('#kit-bar'));
+  q('#kit-btn').click(); q('#kit-btn').click(); q('#kit-btn').click(); await sleep(300);
+  check('kitty taps count up top', (q('#kit-n') || {}).textContent.trim() === '3', 'counter=' + ((q('#kit-n') || {}).textContent || '').trim());
+  await sleep(2500);
+  check('kitty flush reconciles with server', (q('#kit-n') || {}).textContent.trim() === '3', 'counter=' + ((q('#kit-n') || {}).textContent || '').trim());
+  // 9) world: view mounts, presets render, geo search resolves
+  T().show('world'); await sleep(300);
+  check('world view mounted', q('#v-world').classList.contains('on') && !!q('#w-q') && !!q('#w-atkgo') && !!q('#w-auto'));
+  check('world presets render', qa('#w-presets [data-wp]').length >= 6, qa('#w-presets [data-wp]').length + ' presets');
+  q('#w-q').value = 'Berlin'; q('#w-go').click();
+  let geoOk = false;
+  for (let i = 0; i < 50 && !geoOk; i++) { await sleep(500); geoOk = qa('#w-geo [data-gi]').length > 0; }
+  check('world geo resolves Berlin', geoOk && q('#w-geo').textContent.includes('Berlin'), (q('#w-geo') || {}).textContent.slice(0, 80));
 
   console.log(failures === 0 ? '\nALL UI TESTS GREEN' : `\n${failures} FAILURES`);
   srv.kill();

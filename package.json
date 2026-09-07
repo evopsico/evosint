@@ -1,6 +1,6 @@
 {
   "name": "evosint",
-  "version": "2.13.1",
+  "version": "2.14.0",
   "description": "A web-based OSINT (Open Source Intelligence) investigation platform",
   "main": "backend/server.js",
   "scripts": {

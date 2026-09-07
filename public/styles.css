@@ -356,6 +356,29 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 @keyframes lmpop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .lmex{display:inline-block;border:1px solid var(--border2);border-radius:999px;padding:3px 12px;margin:0 3px;font-family:var(--mono);font-size:12px;color:var(--text);cursor:pointer;background:#000}
 .lmex:hover{border-color:#fff}
+/* ---------- kitty clicker ---------- */
+#kit-n{font-family:var(--mono);font-weight:700;font-size:clamp(44px,10vw,64px);margin-top:8px;line-height:1.1}
+#kit-stage{position:relative;display:inline-block;margin-top:4px}
+#kit-btn{font-size:clamp(110px,30vw,168px);line-height:1.2;background:none;border:none;cursor:pointer;padding:0;touch-action:manipulation;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;transition:transform .07s ease}
+#kit-btn:active{transform:scale(.9)}
+#kit-float{position:absolute;inset:0;pointer-events:none}
+.kit1{position:absolute;bottom:72%;font-family:var(--mono);font-weight:700;font-size:18px;color:#fff;text-shadow:0 0 8px #000;animation:kitup .9s ease-out forwards}
+@keyframes kitup{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-70px)}}
+.kitflash{position:fixed;left:50%;top:38%;transform:translate(-50%,-50%);z-index:200;background:#000;border:2px solid #fff;border-radius:14px;padding:18px 34px;font-family:var(--mono);font-weight:700;font-size:clamp(20px,5vw,30px);white-space:nowrap;pointer-events:none;animation:kitpop .35s ease}
+@keyframes kitpop{from{transform:translate(-50%,-50%) scale(.7);opacity:0}to{transform:translate(-50%,-50%) scale(1);opacity:1}}
+/* ---------- world watch ---------- */
+.wclock{font-family:var(--mono);font-weight:700;font-size:clamp(34px,8vw,46px);line-height:1.2}
+.wxbig{font-family:var(--mono);font-weight:700;font-size:clamp(40px,9vw,56px);line-height:1}
+.wday{display:flex;gap:14px;flex-wrap:wrap;font-size:12px}
+.wday>div{border:1px solid var(--border);border-radius:9px;padding:7px 10px;background:#000}
+.witem{padding:8px 2px;border-bottom:1px solid var(--border);font-size:13.5px}
+.witem:last-child{border-bottom:none}
+.wmeta{font-size:11px;color:var(--faint);margin-top:2px}
+.wrow{display:flex;align-items:center;gap:8px;margin:5px 0;font-size:12px}
+.wrow span{width:110px;flex:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--mono)}
+.wbar{flex:1;height:8px;background:#141619;border:1px solid var(--border);border-radius:5px;overflow:hidden}
+.wbar i{display:block;height:100%;background:#fafafa}
+.wrow b{width:36px;text-align:right;font-family:var(--mono);font-weight:400}
 @media(max-width:640px){
   .lmscroll{max-height:72vh}
   #lm-go{flex:1}

@@ -94,7 +94,7 @@ const scanLimiter = rateLimit({
   message: { success: false, error: 'Scan rate limit reached — try again in a few minutes' },
 });
 app.use('/api/', globalLimiter);
-app.use(['/api/username', '/api/social', '/api/ssl', '/api/network', '/api/threat', '/api/archive', '/api/people', '/api/oauth', '/api/breacher', '/api/recon', '/api/lab'], scanLimiter);
+app.use(['/api/username', '/api/social', '/api/ssl', '/api/network', '/api/threat', '/api/archive', '/api/people', '/api/oauth', '/api/breacher', '/api/recon', '/api/lab', '/api/world'], scanLimiter);
 
 // ---------- Auth (mounted before quota so login/signup/me never cost scans) ----------
 const { router: authRouter, quotaMiddleware, ensureSeed } = require('./routes/auth');
@@ -142,6 +142,8 @@ safeMount('/api/oauth', () => require('./routes/oauth'));
 safeMount('/api/breacher', () => require('./routes/breacher'));
 safeMount('/api/recon', () => require('./routes/recon'));
 safeMount('/api/lab', () => require('./routes/stress'));
+safeMount('/api/kitty', () => require('./routes/kitty'));
+safeMount('/api/world', () => require('./routes/world'));
 
 // ---------- Static + pages (no-store: a cached UI is a stale UI) ----------
 const NO_STORE = (res) => res.setHeader('Cache-Control', 'no-store');
@@ -164,7 +166,7 @@ app.get('/', (req, res) => {
 app.get(['/health', '/api/health'], (req, res) => {
   res.json({
     status: 'OK',
-    version: '2.13.1',
+    version: '2.14.0',
     uptime_seconds: Math.round(process.uptime()),
     timestamp: new Date().toISOString(),
   });
