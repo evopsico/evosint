@@ -196,6 +196,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('world geo resolves Berlin', geoOk && q('#w-geo').textContent.includes('Berlin'), (q('#w-geo') || {}).textContent.slice(0, 80));
   check('streets toggle present', !!q('#w-mode-globe') && !!q('#w-mode-streets') && !!q('#w-map'));
   check('headless defaults to dot globe (no WebGL)', T().wGetMode() === 'globe' && q('#w-globewrap').hidden === false && q('#w-streetswrap').hidden === true && typeof dom.window.maplibregl === 'undefined');
+  check('streets veil present but parked', !!q('#w-veil') && q('#w-veil').hidden === true);
 
   console.log(failures === 0 ? '\nALL UI TESTS GREEN' : `\n${failures} FAILURES`);
   srv.kill();

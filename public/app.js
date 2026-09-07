@@ -1303,7 +1303,7 @@ function lmToGraph(){
 /* ================= KITTY CLICKER ================= */
 // 1,000 clicks = +20 scans. Counting + payout are server-side (uncheatable);
 // the client only batches taps and paints. Clicks never cost scans.
-const KIT = { pending: 0, c: 0, miles: 0, capLeft: 10, inflight: false, timer: null };
+const KIT = { pending: 0, c: 0, miles: 0, capLeft: 10, note: '', inflight: false, timer: null };
 function kitPaint(){
   const shown = KIT.c + KIT.pending;
   const n = $('#kit-n'); if(!n) return;
@@ -1312,6 +1312,7 @@ function kitPaint(){
   const m = $('#kit-miles'); if(m) m.textContent = KIT.miles + ' milestone' + (KIT.miles === 1 ? '' : 's');
   const cap = $('#kit-cap'); if(cap) cap.textContent = KIT.capLeft + ' awards left today';
   const b = $('#kit-bal'); if(b) b.textContent = (AUTH.left === Infinity ? '∞' : (AUTH.left ?? '—')) + ' scans';
+  const sub = $('#kit-sub'); if(sub) sub.innerHTML = KIT.note ? esc(KIT.note) : '/ 1,000 clicks → <b style="color:#fff">+20 scans</b>';
 }
 function kitFloater(){
   const stage = $('#kit-float'); if(!stage) return;
@@ -1338,6 +1339,7 @@ async function kitFlush(){
     KIT.c = x.clicks ?? KIT.c;
     KIT.miles = x.awards_today ?? KIT.miles;
     KIT.capLeft = x.awards_left_today ?? KIT.capLeft;
+    KIT.note = x.note || '';
     if((x.earned || 0) > 0) kitAward(x.scans_added || 20);
   }catch(e){ /* keep pending — next tick retries */ }
   KIT.inflight = false;
@@ -1349,6 +1351,7 @@ async function kitState(){
     const d = await apiGet('/kitty/state');
     const x = d.data || {};
     KIT.c = x.clicks || 0; KIT.miles = x.awards_today || 0; KIT.capLeft = x.awards_left_today ?? 10;
+    KIT.note = x.note || '';
   }catch(e){}
   kitPaint();
 }
@@ -1605,10 +1608,17 @@ function globeTapLL(lat, lon){
 /* ---- streets 3D (MapLibre GL, self-hosted vendor, lazy) ---- */
 // Real roads + 3D buildings via free OpenFreeMap tiles (no key). The vendor
 // bundle loads on first use only, so the console stays light otherwise.
-const STREETS = { mode: 'globe', loading: false, loaded: false, map: null, marker: null };
+const STREETS = { mode: 'globe', loading: false, loaded: false, ok: false, map: null, marker: null };
 function wGetMode(){
   try{ const m = localStorage.getItem('evosint-worldmode'); if(m === 'globe' || m === 'streets') return m; }catch(e){}
-  return (typeof window.WebGLRenderingContext !== 'undefined') ? 'streets' : 'globe';
+  // MapLibre v5 needs WebGL2; the constructor throws without it.
+  return (typeof window.WebGL2RenderingContext !== 'undefined') ? 'streets' : 'globe';
+}
+function wVeil(msg){
+  const v = $('#w-veil'); if(!v) return;
+  if(!msg){ v.hidden = true; return; }
+  v.hidden = false;
+  const t = $('#w-veil-t'); if(t) t.textContent = msg;
 }
 function wSetMode(m, silent){
   try{ localStorage.setItem('evosint-worldmode', m); }catch(e){}
@@ -1623,11 +1633,16 @@ function wSetMode(m, silent){
   if(g){ try{ globeEnsure(); }catch(e){} }
   else{
     try{ globeStop(); }catch(e){}
+    wVeil('Loading street tiles…');
     if(!STREETS.loaded && !STREETS.loading){
-      const mc = $('#w-map'); if(mc && !mc.firstChild) mc.innerHTML = '<div class="load"><div class="spin"></div>Loading street tiles…</div>';
+      const mc = $('#w-map'); if(mc && !mc.firstChild) mc.innerHTML = '';
       loadStreets();
     }
-    else if(STREETS.map){ try{ STREETS.map.resize(); }catch(e){} }
+    else if(STREETS.map){
+      try{ STREETS.map.resize(); }catch(e){}
+      wVeil();
+      try{ if(GLOBE.marker) streetsSync(GLOBE.marker.lat, GLOBE.marker.lon); }catch(e){}
+    }
   }
   if(!silent && !g && !STREETS.loaded) toast('Loading street tiles…');
 }
@@ -1665,9 +1680,10 @@ function initStreets(){
     });
     STREETS.map = map;
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
-    let loaded = false;
+    STREETS.ok = false;
+    let tileErrs = 0;
     map.on('load', ()=>{
-      loaded = true;
+      wVeil('Painting streets…');
       try{
         const layers = map.getStyle().layers || [];
         let labelId = null;
@@ -1676,9 +1692,21 @@ function initStreets(){
           paint: { 'fill-extrusion-color': '#3a3f45', 'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 12], 'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0], 'fill-extrusion-opacity': 0.85 } }, labelId);
       }catch(e){}
       try{ map.resize(); }catch(e){}
+      try{ if(GLOBE.marker) streetsSync(GLOBE.marker.lat, GLOBE.marker.lon); }catch(e){}
+    });
+    map.on('idle', ()=>{ STREETS.ok = true; tileErrs = 0; if(STREETS.mode === 'streets') wVeil(); });
+    map.on('error', e=>{
+      if(!(e && (e.tile || e.sourceId))) return; // sprites/glyphs 404s don't matter
+      tileErrs++;
+      if(STREETS.mode === 'streets' && !STREETS.ok) wVeil(`Tiles struggling (${tileErrs}) — VPN or adblock may block them…`);
     });
     map.on('click', e=>{ if(e && e.lngLat) wPick(e.lngLat.lat, e.lngLat.lng); });
-    setTimeout(()=>{ if(!loaded && STREETS.mode === 'streets'){ toast('Street tiles timed out — dot globe it is'); wSetMode('globe'); } }, 30000);
+    setTimeout(()=>{
+      if(!STREETS.ok && STREETS.mode === 'streets'){
+        toast('Street tiles never arrived — dot globe it is');
+        wVeil(); wSetMode('globe');
+      }
+    }, 30000);
   }catch(e){ toast('Streets unavailable here — dot globe it is'); wSetMode('globe'); }
 }
 function streetsSync(lat, lon){
@@ -1949,7 +1977,7 @@ function buildViews(){
   v('kitty', `<div class="casehead"><span class="no">ARCADE</span><span class="stamp">Kitty · Fictional</span></div>
   <div class="card" style="margin-bottom:12px;text-align:center"><div class="brow" style="justify-content:center"><span class="pill" id="kit-bal">— scans</span><span class="pill" id="kit-miles">0 milestones</span><span class="pill" id="kit-cap">10 awards/day</span></div>
     <div id="kit-n">0</div>
-    <div style="color:var(--faint);font-size:12.5px">/ 1,000 clicks → <b style="color:#fff">+20 scans</b></div>
+    <div id="kit-sub" style="color:var(--faint);font-size:12.5px">/ 1,000 clicks → <b style="color:#fff">+20 scans</b></div>
     <div class="pbar" style="max-width:440px;margin:10px auto 4px"><i id="kit-bar" style="width:0%"></i></div>
     <div id="kit-stage"><button id="kit-btn" aria-label="pet the kitty">🐈‍⬛</button><div id="kit-float"></div></div>
     <p style="color:var(--faint);font-size:11.5px;margin-top:10px">Server-counted, uncheatable · max 10 awards a day · clicks are free, awards land instantly</p></div>
@@ -1958,7 +1986,7 @@ function buildViews(){
   <div class="card" style="margin-bottom:12px"><div class="chead"><div class="cico">🌍</div><div><h3>Globe</h3><p id="w-globesub">Dot globe: drag to spin · Streets 3D: real roads + buildings</p></div><span class="pill" id="w-pick">tap the planet</span></div>
     <div class="brow" style="margin-bottom:8px"><button class="mini wmode on" id="w-mode-globe">◉ Globe</button><button class="mini wmode" id="w-mode-streets">Streets 3D</button></div>
     <div class="wglobe" id="w-globewrap"><canvas id="w-globe" tabindex="0" role="img" aria-label="Interactive Earth globe. Drag to rotate, tap to probe a point, arrow keys rotate, Enter probes the center."></canvas></div>
-    <div id="w-streetswrap" hidden><div id="w-map" role="img" aria-label="Interactive street map. Tap to probe a point."></div><p class="wmeta" style="margin-top:6px">tap streets to probe · 3D buildings from zoom 14 · tiles © OpenMapTiles · data © OpenStreetMap contributors</p></div></div>
+    <div id="w-streetswrap" hidden><div style="position:relative"><div id="w-map" role="img" aria-label="Interactive street map. Tap to probe a point."></div><div class="wveil" id="w-veil" hidden><div class="spin"></div><span id="w-veil-t">Loading street tiles…</span></div></div><p class="wmeta" style="margin-top:6px">tap streets to probe · 3D buildings from zoom 14 · tiles © OpenMapTiles · data © OpenStreetMap contributors</p></div></div>
   <div class="card" style="margin-bottom:12px"><div class="chead"><div class="cico">🔍</div><div><h3>Zone</h3><p>…or type it: weather, local time, news and conflict wire for any place on Earth.</p></div></div>
     <div class="brow"><input id="w-q" placeholder="city or country…" style="flex:1;min-width:180px;padding:10px 14px;border-radius:10px;border:1px solid var(--border2);background:#000;color:var(--text);outline:none"><button class="btn" id="w-go" style="flex:none">Locate ▸</button></div>
     <div class="brow" id="w-presets" style="margin-top:8px"></div>

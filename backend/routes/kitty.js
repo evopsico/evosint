@@ -44,7 +44,16 @@ function stateOf(ident, st) {
     awards_today: st.awards, awards_left_today: Math.max(0, MAX_AWARDS_PER_DAY - st.awards),
     daily_cap: MAX_AWARDS_PER_DAY,
     scans_left: ident.infinite ? 'infinite' : ident.left, tier: ident.tier,
+    note: ident.infinite ? 'Infinite plan — clicks count for glory' : '',
   };
+}
+
+function kittyBucket(K, ident) {
+  // API-key holders share their owner's user bucket; guests use the IP bucket.
+  const key = ident.kind === 'guest' ? 'g' : 'u';
+  const idk = ident.kind === 'guest' ? ident.ip : ident.userId;
+  const bucket = key === 'u' ? (K.u = K.u || {}) : (K.g = K.g || {});
+  return [bucket, idk];
 }
 
 // GET /api/kitty/state — counter + balance for first paint (free, like /auth/me)
@@ -52,13 +61,8 @@ router.get('/state', async (req, res) => {
   try {
     const ident = await identOr401(req, res);
     if (!ident) return;
-    if (ident.infinite) {
-      quotaHeaders(res, ident);
-      return ok(res, { clicks: 0, per: PER, reward: REWARD, to_next: PER, awards_today: 0, awards_left_today: MAX_AWARDS_PER_DAY, daily_cap: MAX_AWARDS_PER_DAY, scans_left: 'infinite', tier: ident.tier, note: 'Infinite plan — kitty is just for fun' });
-    }
     const K = await store.loadKitty();
-    const bucket = ident.kind === 'user' ? (K.u = K.u || {}) : (K.g = K.g || {});
-    const idk = ident.kind === 'user' ? ident.userId : ident.ip;
+    const [bucket, idk] = kittyBucket(K, ident);
     const today = dayUTC();
     let st = bucket[idk];
     if (!st || st.day !== today) st = bucket[idk] = { c: 0, day: today, awards: 0 };
@@ -74,13 +78,9 @@ router.post('/click', async (req, res) => {
     if (!ident) return;
     const n = Math.floor(Number(req.body?.n));
     if (!Number.isFinite(n) || n < 1 || n > 200) return fail(res, 400, 'Body { n } with 1–200 clicks required');
-    if (ident.infinite) {
-      quotaHeaders(res, ident);
-      return ok(res, { clicks: 0, per: PER, reward: REWARD, to_next: PER, awards_today: 0, awards_left_today: MAX_AWARDS_PER_DAY, daily_cap: MAX_AWARDS_PER_DAY, earned: 0, scans_added: 0, scans_left: 'infinite', tier: ident.tier, note: 'Infinite plan — kitty is just for fun' });
-    }
+    const earnable = !ident.infinite;
     const K = await store.loadKitty();
-    const bucket = ident.kind === 'user' ? (K.u = K.u || {}) : (K.g = K.g || {});
-    const idk = ident.kind === 'user' ? ident.userId : ident.ip;
+    const [bucket, idk] = kittyBucket(K, ident);
     const today = dayUTC();
     let st = bucket[idk];
     if (!st || st.day !== today) st = bucket[idk] = { c: 0, day: today, awards: 0 };
@@ -88,7 +88,9 @@ router.post('/click', async (req, res) => {
     if (st.awards < MAX_AWARDS_PER_DAY) {
       st.c += n;
       while (st.c >= PER && st.awards < MAX_AWARDS_PER_DAY) { st.c -= PER; st.awards += 1; earned += 1; }
-      if (earned > 0) {
+      // Infinite plans stack milestones for glory but need no scans; writing
+      // Infinity into the quota store would corrupt it (Infinity → null in JSON).
+      if (earned > 0 && earnable) {
         const after = ident.left + earned * REWARD;
         await persistLeft(ident, after);
         ident.left = after;
@@ -96,7 +98,7 @@ router.post('/click', async (req, res) => {
       await store.saveKitty(K);
     }
     quotaHeaders(res, ident, ident.left);
-    return ok(res, { ...stateOf(ident, st), earned, scans_added: earned * REWARD, capped: st.awards >= MAX_AWARDS_PER_DAY }, { source: 'kitty' });
+    return ok(res, { ...stateOf(ident, st), earned, scans_added: earnable ? earned * REWARD : 0, capped: st.awards >= MAX_AWARDS_PER_DAY }, { source: 'kitty' });
   } catch (e) { return fail(res, 500, 'Kitty click failed'); }
 });
 
