@@ -123,6 +123,7 @@ function renderAccountPane(){
     <div class="field"><label>Current password</label><input type="password" id="pw-cur" autocomplete="current-password"></div>
     <div class="row2"><div class="field"><label>New password (8+)</label><input type="password" id="pw-next" autocomplete="new-password"></div>
     <div class="field"><label>Repeat new</label><input type="password" id="pw-next2" autocomplete="new-password"></div></div>
+    ${AUTH.totp ? `<div class="field"><label>2FA code (required)</label><input id="pw-totp" inputmode="numeric" autocomplete="one-time-code" placeholder="6-digit app code"></div>` : ''}
     <div class="brow"><button class="btn" id="pwGo">Change password</button></div>
     ${AUTH.tier==='super' ? `<div class="sect">API keys · infinite scans</div>
       <div class="brow"><input id="keyLabel" placeholder="key label (e.g. laptop)" style="flex:1;padding:10px 12px;border-radius:8px;border:1px solid var(--border2);background:#000;color:var(--text);outline:none"><button class="btn" id="keyGen" style="flex:none">Generate</button></div>
@@ -240,7 +241,8 @@ async function changePw(){
   const nx = document.getElementById('pw-next').value;
   const nx2 = document.getElementById('pw-next2').value;
   if(nx !== nx2){ toast('New passwords do not match'); return; }
-  try{ await apiPost('/auth/password', { current:cur, next:nx }); toast('Password changed'); renderAccountPane(); }
+  const tc = document.getElementById('pw-totp');
+  try{ await apiPost('/auth/password', { current:cur, next:nx, totp:tc ? tc.value : '' }); toast('Password changed'); renderAccountPane(); }
   catch(e){ toast(e.message); }
 }
 // ---- TOTP panel (states render into #totpZone) ----
@@ -1303,13 +1305,13 @@ function lmToGraph(){
 /* ================= KITTY CLICKER ================= */
 // 1,000 clicks = +20 scans. Counting + payout are server-side (uncheatable);
 // the client only batches taps and paints. Clicks never cost scans.
-const KIT = { pending: 0, c: 0, miles: 0, capLeft: 10, note: '', inflight: false, timer: null };
+const KIT = { taps: [], c: 0, miles: 0, capLeft: 10, note: '', challenged: false, cooldownMs: 0, held: 0, turnstile: false, inflight: false, timer: null, cdT: null, lastT: 0 };
 function kitPaint(){
-  const shown = KIT.c + KIT.pending;
+  const shown = KIT.c + KIT.taps.length;
   const n = $('#kit-n'); if(!n) return;
   n.textContent = shown.toLocaleString('en-US');
   const bar = $('#kit-bar'); if(bar) bar.style.width = Math.min(100, shown / 10) + '%';
-  const m = $('#kit-miles'); if(m) m.textContent = KIT.miles + ' milestone' + (KIT.miles === 1 ? '' : 's');
+  const m = $('#kit-miles'); if(m) m.textContent = KIT.miles + ' milestone' + (KIT.miles === 1 ? '' : 's') + (KIT.held ? ` · ${KIT.held} held` : '');
   const cap = $('#kit-cap'); if(cap) cap.textContent = KIT.capLeft + ' awards left today';
   const b = $('#kit-bal'); if(b) b.textContent = (AUTH.left === Infinity ? '∞' : (AUTH.left ?? '—')) + ' scans';
   const sub = $('#kit-sub'); if(sub) sub.innerHTML = KIT.note ? esc(KIT.note) : '/ 1,000 clicks → <b style="color:#fff">+20 scans</b>';
@@ -1323,35 +1325,67 @@ function kitFloater(){
   stage.appendChild(s);
   s.addEventListener('animationend', ()=>s.remove());
 }
-function kitClick(){ KIT.pending++; kitPaint(); kitFloater(); kitKick(); }
+function kitClick(e){
+  const now = performance.now();
+  const dt = KIT.lastT ? Math.min(10000, Math.round(now - KIT.lastT)) : 0;
+  KIT.lastT = now;
+  // Keyboard taps (Enter/Space) carry no pointer: detail===0. They count
+  // fully — only movement-based signals skip them.
+  let x = null, y = null;
+  if(e && e.detail !== 0 && Number.isFinite(e.clientX)){
+    const r = document.getElementById('kit-btn').getBoundingClientRect();
+    x = Math.round(e.clientX - r.left); y = Math.round(e.clientY - r.top);
+  }
+  KIT.taps.push([dt, x, y]);
+  if(KIT.taps.length > 200) kitFlush();
+  kitPaint(); kitFloater(); kitKick();
+}
 function kitKick(){
-  if(KIT.pending >= 25){ kitFlush(); return; }
-  if(!KIT.timer) KIT.timer = setTimeout(()=>{ KIT.timer = null; kitFlush(); }, 1500);
+  if(KIT.backoffUntil && Date.now() < KIT.backoffUntil){
+    if(!KIT.timer) KIT.timer = setTimeout(()=>{ KIT.timer = null; kitFlush(); }, KIT.backoffUntil - Date.now() + 100);
+    return;
+  }
+  if(KIT.taps.length >= 20){ kitFlush(); return; }
+  if(!KIT.timer) KIT.timer = setTimeout(()=>{ KIT.timer = null; kitFlush(); }, 2000);
 }
 async function kitFlush(){
-  if(KIT.inflight || KIT.pending <= 0) return;
+  if(KIT.inflight || !KIT.taps.length) return;
   KIT.inflight = true;
-  const n = Math.min(KIT.pending, 200);
+  const batch = KIT.taps.slice(0, 60);
+  const body = { taps: batch };
+  if(KIT.challenged){
+    const tok = cfToken('cf-kitty');
+    if(tok) body.cf_token = tok;
+  }
   try{
-    const d = await apiPost('/kitty/click', { n });
+    const d = await apiPost('/kitty/click', body);
     const x = d.data || {};
-    KIT.pending = Math.max(0, KIT.pending - n);
+    KIT.taps.splice(0, batch.length);
     KIT.c = x.clicks ?? KIT.c;
     KIT.miles = x.awards_today ?? KIT.miles;
     KIT.capLeft = x.awards_left_today ?? KIT.capLeft;
     KIT.note = x.note || '';
-    if((x.earned || 0) > 0) kitAward(x.scans_added || 20);
-  }catch(e){ /* keep pending — next tick retries */ }
+    KIT.held = x.held || 0;
+    KIT.turnstile = !!x.turnstile;
+    if((x.earned || 0) > 0 && (x.scans_added || 0) > 0) kitAward(x.scans_added);
+    else if((x.earned || 0) > 0) toast('Milestone banked for glory');
+    if(x.released > 0) toast(`+${x.released} held scans released`);
+    kitFair(!!x.challenged, x.cooldown_ms || 0);
+  }catch(e){
+    // Arrival throttle (429): back off with taps preserved — kitKick spaces retries.
+    if(e && /429|slow down|breath|dizzy|many requests/.test(e.message || '')) KIT.backoffUntil = Date.now() + 3000;
+  }
   KIT.inflight = false;
   kitPaint();
-  if(KIT.pending > 0) kitKick();
+  if(KIT.taps.length) kitKick();
 }
 async function kitState(){
   try{
     const d = await apiGet('/kitty/state');
     const x = d.data || {};
     KIT.c = x.clicks || 0; KIT.miles = x.awards_today || 0; KIT.capLeft = x.awards_left_today ?? 10;
-    KIT.note = x.note || '';
+    KIT.note = x.note || ''; KIT.held = x.held || 0; KIT.turnstile = !!x.turnstile;
+    kitFair(!!x.challenged, x.cooldown_ms || 0);
   }catch(e){}
   kitPaint();
 }
@@ -1365,6 +1399,55 @@ function kitAward(added){
     kitAward._t = setTimeout(()=>{ f.hidden = true; }, 2400);
   }
   toast('+' + added + ' scans — kitty provides');
+}
+// Fair-play challenge banner: friendly, never accusatory. Taps keep counting;
+// only the payout waits until the check passes (or the cooldown lapses).
+function kitFair(on, cooldownMs){
+  KIT.challenged = on; KIT.cooldownMs = cooldownMs || 0;
+  const box = $('#kit-fair'); if(!box) return;
+  box.hidden = !on;
+  if(KIT.cdT){ clearInterval(KIT.cdT); KIT.cdT = null; }
+  if(!on) return;
+  const vb = $('#kit-verify');
+  if(KIT.turnstile && kitEnsureWidget()){ if(vb) vb.hidden = false; }
+  else if(vb) vb.hidden = true;
+  kitFairTick();
+  KIT.cdT = setInterval(kitFairTick, 1000);
+}
+function kitFairTick(){
+  const t = $('#kit-fair-t'); if(!t) return;
+  if(KIT.turnstile && kitEnsureWidget()){
+    t.textContent = `Fair-play check — tick the box${KIT.held ? ` to release ${KIT.held * 20} held scans` : ''}, or just wait it out. Taps still count.`;
+    return;
+  }
+  if(KIT.cooldownMs > 0){
+    const s = Math.ceil(KIT.cooldownMs / 1000);
+    KIT.cooldownMs = Math.max(0, KIT.cooldownMs - 1000);
+    t.textContent = `Fair-play check — awards resume in ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}. Taps still count.`;
+    if(KIT.cooldownMs <= 0){ clearInterval(KIT.cdT); KIT.cdT = null; kitState(); }
+  }else t.textContent = 'Fair-play check — taps still count, awards resume shortly.';
+}
+function kitEnsureWidget(){
+  try{
+    if(!AUTH.cfSiteKey || typeof turnstile === 'undefined') return false;
+    window._cfWidgets = window._cfWidgets || {};
+    if(window._cfWidgets['cf-kitty'] !== undefined) return true;
+    window._cfWidgets['cf-kitty'] = turnstile.render('#cf-kitty', { sitekey: AUTH.cfSiteKey, theme: 'dark', size: 'compact' });
+    return true;
+  }catch{ return false; }
+}
+async function kitVerify(){
+  const tok = cfToken('cf-kitty');
+  if(!tok){ toast('Tick the box first'); return; }
+  try{
+    const d = await apiPost('/kitty/verify', { cf_token: tok });
+    cfReset('cf-kitty');
+    const x = d.data || {};
+    if(x.released > 0) toast(`+${x.released} held scans released`);
+    if(x.cleared) toast('Fair-play check passed');
+    kitFair(!!x.challenged, x.cooldown_ms || 0);
+    kitState();
+  }catch(e){ toast(e.message || 'Verify failed'); }
 }
 
 /* ================= WORLD GLOBE ================= */
@@ -1980,7 +2063,8 @@ function buildViews(){
     <div id="kit-sub" style="color:var(--faint);font-size:12.5px">/ 1,000 clicks → <b style="color:#fff">+20 scans</b></div>
     <div class="pbar" style="max-width:440px;margin:10px auto 4px"><i id="kit-bar" style="width:0%"></i></div>
     <div id="kit-stage"><button id="kit-btn" aria-label="pet the kitty">🐈‍⬛</button><div id="kit-float"></div></div>
-    <p style="color:var(--faint);font-size:11.5px;margin-top:10px">Server-counted, uncheatable · max 10 awards a day · clicks are free, awards land instantly</p></div>
+    <div id="kit-fair" hidden style="max-width:440px;margin:10px auto 0;border:1px solid var(--border2);border-radius:10px;padding:10px 12px;background:#000"><div style="font-size:12px;margin-bottom:6px">🛡 <span id="kit-fair-t">Fair-play check</span></div><div id="cf-kitty" style="display:flex;justify-content:center"></div><div class="brow" style="justify-content:center;margin-top:8px"><button class="mini" id="kit-verify" hidden>Verify ✓</button></div></div>
+    <p style="color:var(--faint);font-size:11.5px;margin-top:10px">Server-counted rhythm check · max 10 awards a day · clicks are free, awards land instantly</p></div>
   <div id="kit-flash" class="kitflash" hidden>+20 SCANS</div>`) +
   v('world', `<div class="casehead"><span class="no">WORLD WATCH</span><span class="stamp">Live planet · Fictional</span></div>
   <div class="card" style="margin-bottom:12px"><div class="chead"><div class="cico">🌍</div><div><h3>Globe</h3><p id="w-globesub">Dot globe: drag to spin · Streets 3D: real roads + buildings</p></div><span class="pill" id="w-pick">tap the planet</span></div>
@@ -2205,7 +2289,8 @@ $('#lm-zout').onclick = ()=>lmZoom(-0.25);
 $('#lm-zfit').onclick = lmFit;
 $('#lm-home').onclick = lmHome;
 $('#lmstats').onclick = ()=>{ if(LM.sel){ LM.sel = null; renderLinkMap(); } };
-$('#kit-btn').onclick = ()=>kitClick();
+$('#kit-btn').onclick = (e)=>kitClick(e);
+$('#kit-verify').onclick = kitVerify;
 $('#w-go').onclick = ()=>wGeo(false);
 $('#w-q').addEventListener('keydown', e=>{ if(e.key==='Enter') wGeo(false); });
 $('#w-atkgo').onclick = wAttacks;

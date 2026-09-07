@@ -1,6 +1,6 @@
 // Evosint service worker — caches the console SHELL for instant/offline loads.
 // NEVER caches /api/* or /health: intelligence results must always be fresh.
-const CACHE = 'evosint-shell-v2.12.0';
+const CACHE = 'evosint-shell-v2.18.0';
 const SHELL = ['/', '/index.html', '/public/app.js', '/public/styles.css', '/icon.svg', '/manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {

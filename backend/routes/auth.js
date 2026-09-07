@@ -64,6 +64,7 @@ async function ensureSeed() {
   const users = await store.loadUsers();
   if (Object.values(users).some((u) => u.username.toLowerCase() === 'evo')) return;
   if (Object.keys(users).length > 0) return; // never auto-seed into a non-empty db
+  const fallback = !process.env.EVO_ADMIN_PASS;
   const pass = await hashPassword(process.env.EVO_ADMIN_PASS || 'aA12345678@');
   const id = crypto.randomBytes(8).toString('hex');
   users[id] = {
@@ -72,6 +73,7 @@ async function ensureSeed() {
   };
   await store.saveUsers(users);
   console.log(`✓ seeded super account '${users[id].username}' (change password in Account panel)`);
+  if (fallback) console.warn('(!) EVO_ADMIN_PASS was NOT set — the seed super uses a PUBLIC default password. Set EVO_ADMIN_PASS and change it in the Account panel immediately.');
 }
 
 // ---------- identity resolution ----------
@@ -104,7 +106,10 @@ async function resolveIdentity(req) {
     const users = await store.loadUsers();
     const u = users[p.uid];
     if (!u) return { kind: 'token', valid: false };
-    return { kind: 'user', valid: true, userId: u.id, username: u.username, tier: u.tier, infinite: u.tier === 'super', left: u.tier === 'super' ? Infinity : u.left };
+    // left:Infinity serializes to null in JSON stores; coerce so a demoted
+    // super can never brick into a permanent 402.
+    const left = u.tier === 'super' ? Infinity : (Number.isFinite(u.left) ? u.left : TIERS.user.quota);
+    return { kind: 'user', valid: true, userId: u.id, username: u.username, tier: u.tier, infinite: u.tier === 'super', left };
   }
   // 3) guest bucket by IP
   const ip = clientIp(req);
@@ -277,6 +282,12 @@ router.post('/password', ah(async (req, res) => {
   if (!u) return fail(res, 401, 'Log in first');
   const next = String(req.body?.next || '');
   if (!(await verifyPassword(String(req.body?.current || ''), u.pass))) return fail(res, 401, 'Current password is wrong');
+  // A stolen session must not be enough to lock the owner out: TOTP accounts
+  // re-prove the second factor before the password moves.
+  if (u.totp && u.totp.enabled) {
+    const tcode = String(req.body?.totp || '').replace(/\D/g, '');
+    if (!tcode || !totpVerify(u.totp.secret, tcode)) return fail(res, 401, 'Two-factor code required');
+  }
   if (next.length < 8 || next.length > 200) return fail(res, 400, 'New password must be 8–200 characters');
   u.pass = await hashPassword(next);
   await store.saveUsers(users);
@@ -463,4 +474,4 @@ router.post('/backup/restore', requireSuper, async (req, res) => {
   return ok(res, { restored: true, users: Object.keys(d.users).length, keys: d.keys.length });
 });
 
-module.exports = { router, quotaMiddleware, resolveIdentity, persistLeft, ensureSeed, TIERS };
+module.exports = { router, quotaMiddleware, resolveIdentity, persistLeft, ensureSeed, verifyTurnstile, TIERS };

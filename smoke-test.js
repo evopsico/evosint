@@ -1,8 +1,9 @@
 const { spawn } = require('child_process');
 const http = require('http');
-const PORT = 3001;
+// Own port: never collides with a dev server on :3001 or other suites.
+const PORT = 3002;
 
-const server = spawn('node', ['backend/server.js'], { cwd: __dirname, env: { ...process.env, PORT: String(PORT) } });
+const server = spawn('node', ['backend/server.js'], { cwd: __dirname, env: { ...process.env, PORT: String(PORT), KITTY_PER: '40' } });
 server.stdout.on('data', () => {});
 server.stderr.on('data', () => {});
 
@@ -12,8 +13,8 @@ function call(path, method = 'GET', body = null, headers = {}, timeout = 45000) 
     const req = http.request({ hostname: '127.0.0.1', port: PORT, path, method, timeout,
       headers: { ...(p ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(p) } : {}), ...headers } },
       (res) => { let d = ''; res.on('data', (c) => { d += c; }); res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: d })); });
-    req.on('timeout', () => { req.destroy(); resolve({ status: -1, body: 'TIMEOUT' }); });
-    req.on('error', (e) => resolve({ status: -1, body: 'ERR ' + e.message }));
+    req.on('timeout', () => { req.destroy(); resolve({ status: -1, headers: {}, body: 'TIMEOUT' }); });
+    req.on('error', (e) => resolve({ status: -1, headers: {}, body: 'ERR ' + e.message }));
     if (p) req.write(p);
     req.end();
   });
@@ -58,22 +59,56 @@ function call(path, method = 'GET', body = null, headers = {}, timeout = 45000) 
     console.log(`${m} ${p} -> ${r.status} (${Date.now() - t0}ms)${r.headers['x-searches-left'] !== undefined ? ` [left=${r.headers['x-searches-left']}]` : ''} | ${r.body.replace(/\s+/g, ' ').slice(0, 200)}`);
   }
   console.log(`\nPASS ${pass}/${tests.length} (base)`);
-  // kitty: 1000 clicks in 5 batches -> +20 scans, balance agrees
+  // kitty (KITTY_PER=40 here): legit-shaped taps to the award -> +20, balance agrees
   const meBefore = J(await call('/api/auth/me', 'GET', null, H)).data.searches_left;
+  let prevTap = 0;
+  const humanBatch = async (n) => {
+    const now = Date.now();
+    const taps = [prevTap ? [Math.min(10000, now - prevTap), 70, 60] : [80, 70, 60]];
+    for (let i = 1; i < n; i++) taps.push([Math.round(60 + Math.random() * 80), Math.round(60 + Math.random() * 50), Math.round(55 + Math.random() * 40)]);
+    prevTap = now;
+    const rr = await call('/api/kitty/click', 'POST', { taps }, H);
+    return J(rr).data;
+  };
   let earn = null;
-  for (let i = 0; i < 5; i++) { r = await call('/api/kitty/click', 'POST', { n: 200 }, H); earn = J(r).data; }
-  const kittyOk = earn && earn.earned === 1 && earn.scans_added === 20;
+  earn = await humanBatch(30);
+  await new Promise((s) => setTimeout(s, 3200));
+  earn = await humanBatch(30);
+  const kittyOk = earn && earn.per === 40 && earn.earned === 1 && earn.scans_added === 20 && earn.challenged !== true && earn.clicks === 20;
   if (kittyOk) pass++;
-  console.log(`kitty 5x200 -> earned=${earn && earn.earned} added=${earn && earn.scans_added} | ${kittyOk ? 'AWARD OK' : 'AWARD FAIL'}`);
+  console.log(`kitty legit award -> earned=${earn && earn.earned} added=${earn && earn.scans_added} c=${earn && earn.clicks} challenged=${earn && earn.challenged} | ${kittyOk ? 'AWARD OK' : 'AWARD FAIL'}`);
   r = await call('/api/auth/me', 'GET', null, H);
   const balOk = J(r).data.searches_left === meBefore + 20;
   if (balOk) pass++;
   console.log(`kitty balance ${meBefore} -> ${J(r).data.searches_left} | ${balOk ? 'OK' : 'FAIL'}`);
+  // fair play: metronome bot gets challenged…
+  const bot = 'bot' + Date.now().toString(36);
+  r = await call('/api/auth/signup', 'POST', { username: bot, password: 'BotTest12!', repeat: 'BotTest12!', dob: '1995-06-06' });
+  const HB = { Authorization: 'Bearer ' + J(r).data.token };
+  const metro = Array.from({ length: 20 }, () => [100, 80, 60]);
+  let ch = null;
+  for (let i = 0; i < 3; i++) {
+    r = await call('/api/kitty/click', 'POST', { taps: metro }, HB);
+    ch = J(r).data;
+    await new Promise((s) => setTimeout(s, 1600));
+  }
+  const metroOk = ch && ch.challenged === true && typeof ch.cooldown_ms === 'number';
+  if (metroOk) pass++;
+  console.log(`fair-play metronome -> challenged=${ch && ch.challenged} cooldown=${ch && ch.cooldown_ms} | ${metroOk ? 'OK' : 'FAIL'}`);
+  // …and a machine-gun burst trips it in a single batch
+  const gun = 'gun' + Date.now().toString(36);
+  r = await call('/api/auth/signup', 'POST', { username: gun, password: 'GunTest12!', repeat: 'GunTest12!', dob: '1995-06-06' });
+  const HG = { Authorization: 'Bearer ' + J(r).data.token };
+  r = await call('/api/kitty/click', 'POST', { taps: Array.from({ length: 60 }, () => [5, 80, 60]) }, HG);
+  const mg = J(r).data;
+  const mgOk = r.status === 200 && mg && mg.challenged === true;
+  if (mgOk) pass++;
+  console.log(`fair-play machine-gun -> ${r.status} challenged=${mg && mg.challenged} | ${mgOk ? 'OK' : 'FAIL'}`);
   r = await call('/api/world/geo?q=Berlin', 'GET', null, H);
   const geoOk = r.status === 200 && ((J(r).data || [])[0] || {}).name === 'Berlin';
   if (geoOk) pass++;
   console.log(`world geo Berlin -> ${r.status} | ${geoOk ? 'OK' : String(r.body).slice(0, 120)}`);
-  console.log(`\nPASS ${pass}/${tests.length + 3}`);
+  console.log(`\nPASS ${pass}/${tests.length + 5}`);
   server.kill();
-  setTimeout(() => process.exit(pass === tests.length + 3 ? 0 : 1), 500);
+  setTimeout(() => process.exit(pass === tests.length + 5 ? 0 : 1), 500);
 })();

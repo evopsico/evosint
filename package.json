@@ -1,6 +1,6 @@
 {
   "name": "evosint",
-  "version": "2.17.0",
+  "version": "2.18.0",
   "description": "A web-based OSINT (Open Source Intelligence) investigation platform",
   "main": "backend/server.js",
   "scripts": {
@@ -44,5 +44,8 @@
   "devDependencies": {
     "jsdom": "^29.1.1",
     "nodemon": "^3.1.4"
+  },
+  "overrides": {
+    "qs": "^6.16.0"
   }
 }
