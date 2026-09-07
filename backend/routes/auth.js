@@ -13,6 +13,11 @@ const TIERS = {
 };
 const EXEMPT = [/^\/auth(\/|$)/, /^\/health\/?$/, /^\/lab\/limits\/?$/, /^\/username\/catalog\/list\/?$/];
 
+// Express 4 does not catch rejected async handlers (the connection just hangs
+// until the platform kills it). Every async route below runs inside `ah()` so
+// store/network failures always become a 500 JSON instead of a hung socket.
+const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+
 // ---------- password hashing (scrypt, stdlib only) ----------
 function hashPassword(password) {
   return new Promise((resolve, reject) => {
@@ -174,7 +179,7 @@ const loginLimiter = rateLimit({
 router.use(authLimiter);
 
 // POST /api/auth/signup { username, password, repeat, dob }
-router.post('/signup', async (req, res) => {
+router.post('/signup', ah(async (req, res) => {
   const username = String(req.body?.username || '').trim();
   const password = String(req.body?.password || '');
   const repeat = String(req.body?.repeat ?? req.body?.repeatPassword ?? '');
@@ -193,14 +198,14 @@ router.post('/signup', async (req, res) => {
   users[id] = { id, username, pass, tier: 'user', left: TIERS.user.quota, dob: dob || null, created: new Date().toISOString() };
   await store.saveUsers(users);
   return ok(res, { token: await signToken(id), username, tier: 'user', searches_left: TIERS.user.quota });
-});
+}));
 
 // POST /api/auth/login { username, password }
 // NOTE: unknown usernames still pay one full scrypt (DUMMY_PASS) so timing
 // alone can never reveal whether an account exists. Error text is identical
 // for both cases for the same reason.
 const DUMMY_PASS = { salt: '0'.repeat(32), hash: '0'.repeat(128) };
-router.post('/login', loginLimiter, async (req, res) => {
+router.post('/login', loginLimiter, ah(async (req, res) => {
   const username = String(req.body?.username || '').trim();
   const password = String(req.body?.password || '');
   if (!username || !password) return fail(res, 401, 'Invalid username or password');
@@ -217,10 +222,10 @@ router.post('/login', loginLimiter, async (req, res) => {
     token: await signToken(u.id), username: u.username, tier: u.tier,
     searches_left: u.tier === 'super' ? 'infinite' : u.left,
   });
-});
+}));
 
 // GET /api/auth/me — who am I + quota (works logged out → guest bucket)
-router.get('/me', async (req, res) => {
+router.get('/me', ah(async (req, res) => {
   const ident = await resolveIdentity(req);
   if ((ident.kind === 'key' || ident.kind === 'token') && ident.valid === false) {
     return ok(res, { logged_in: false, username: 'Guest', tier: 'guest', searches_left: 0, invalid_credential: true });
@@ -231,10 +236,10 @@ router.get('/me', async (req, res) => {
     searches_left: ident.infinite ? 'infinite' : ident.left,
     kind: ident.kind,
   });
-});
+}));
 
 // POST /api/auth/password { current, next } — change own password
-router.post('/password', async (req, res) => {
+router.post('/password', ah(async (req, res) => {
   const auth = String(req.headers.authorization || '');
   const m = /^Bearer\s+(.+)$/.exec(auth);
   const p = m && await readToken(m[1].trim());
@@ -248,7 +253,7 @@ router.post('/password', async (req, res) => {
   u.pass = await hashPassword(next);
   await store.saveUsers(users);
   return ok(res, { changed: true });
-});
+}));
 
 async function requireUser(req, res, next) {
   try {
@@ -271,14 +276,14 @@ function requireSuper(req, res, next) {
 }
 
 // GET /api/auth/keys — list my keys (super only; keys are infinite)
-router.get('/keys', requireSuper, async (req, res) => {
+router.get('/keys', requireSuper, ah(async (req, res) => {
   const mine = (await store.loadKeys()).filter((k) => k.userId === req.user.id)
     .map((k) => ({ id: k.id, label: k.label, prefix: k.prefix, created: k.created, last_used: k.last_used || null }));
   return ok(res, mine, { count: mine.length });
-});
+}));
 
 // POST /api/auth/keys { label } — mint an infinite key (super only, full key shown ONCE)
-router.post('/keys', requireSuper, async (req, res) => {
+router.post('/keys', requireSuper, ah(async (req, res) => {
   const label = oneLine(req.body?.label || 'default', 60) || 'default';
   const raw = 'evk_' + crypto.randomBytes(24).toString('hex');
   const keys = await store.loadKeys();
@@ -290,16 +295,16 @@ router.post('/keys', requireSuper, async (req, res) => {
   keys.push(rec);
   await store.saveKeys(keys);
   return ok(res, { id: rec.id, label, key: raw, note: 'Copy it now — the full key is never shown again. Keys grant infinite searches.' });
-});
+}));
 
 // DELETE /api/auth/keys/:id — revoke (super only)
-router.delete('/keys/:id', requireSuper, async (req, res) => {
+router.delete('/keys/:id', requireSuper, ah(async (req, res) => {
   const keys = await store.loadKeys();
   const i = keys.findIndex((k) => k.id === req.params.id && k.userId === req.user.id);
   if (i < 0) return fail(res, 404, 'Key not found');
   keys.splice(i, 1);
   await store.saveKeys(keys);
   return ok(res, { revoked: true });
-});
+}));
 
 module.exports = { router, quotaMiddleware, resolveIdentity, ensureSeed, TIERS };
