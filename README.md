@@ -1,4 +1,4 @@
-# Evosint v2.10 — "Ghost" Monochrome Console (fictional agency theme)
+# Evosint v2.12 — "Ghost" Monochrome Console (fictional agency theme)
 
 A pure black-and-white case-file interface — no gradients, no purple, no gold — **an obvious parody/training build, not affiliated with the CIA, FBI, or
 any government agency**. Under the theme: **~100 API endpoints + 177-engine sweep
@@ -58,7 +58,9 @@ URLs with the package version, so edits appear on plain reload — no hard refre
 | Super | infinite | seeded owner login + API keys |
 
 - Owner login is seeded on first boot: username `evo`. Change its password immediately in the Account panel (top-right chip → Account → Change password). Override the seed via `EVO_ADMIN_USER` / `EVO_ADMIN_PASS` env before first boot.
-- Passwords are scrypt-hashed; sessions are HMAC-signed 30-day tokens; API keys are `evk_…` (SHA-256 stored, full key shown once, infinite scans, super-only minting, revocable).
+- Passwords are scrypt-hashed; sessions are HMAC-signed 30-day tokens; API keys are `evk_…` (SHA-256 stored, full key shown once, infinite scans, super-only minting, revocable). Super accounts can enable **TOTP two-factor** (authenticator app + 8 one-time backup codes) from the Account panel; if the database ever ends up with no super user, the next signup automatically claims super (logged server-side).
+- **Bot wall (optional):** set `TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET` (free at cloudflare.com) to require a captcha on signup/login; when unset, everything works without it.
+- **Backup & restore (super):** Account panel → Export downloads the full accounts/keys/quotas snapshot (password hashes included — guard the file); Import replaces everything after confirmation.
 - Every scan response carries `X-Searches-Left` / `X-Tier`; exhausted quotas return HTTP 402 and the UI opens the login modal. Auth data lives in `backend/data/` (git-ignored).
 - Dashboard greets you by your chosen username once logged in.
 - Sessions persist: "Remember me" (default) survives browser restarts; unticked
@@ -67,7 +69,9 @@ URLs with the package version, so edits appear on plain reload — no hard refre
 - Fully responsive: bottom thumb-navigation bar (Home/Search/Modules/Graph/Menu)
   plus swipe-away drawer with backdrop on tablets and phones, roomy single-column
   cards, grids collapse, touch targets hit 44px+, inputs stay at 16px so iOS
-  never auto-zooms, notch safe-areas respected.
+  never auto-zooms, notch safe-areas respected. Installable as a PWA
+  (phone: browser menu → Add to Home Screen) with an offline app shell —
+  scan results always go live, never cached.
 
 ## Console views
 
@@ -76,16 +80,16 @@ URLs with the package version, so edits appear on plain reload — no hard refre
 | Dashboard | Welcome stats (Today / This week / Success rate / Workspace / Plan / Status), **Exposure Index** ring, shortcuts, recent scans |
 | Search | DataVoid-style tabs (Email/Username/Phone/Domain/IP) + Query + Run search; Email tab runs the full Breacher |
 | Modules | **177 site engines** with favicons, label filters, Grid/List views, ★ pins, sweep, Export to graph |
-| Investigate | Case-numbered link chart (click-to-copy, auto-link toggle), manual + one-click entities, JSON export |
+| Investigate | Case-numbered link chart (click-to-copy, auto-link toggle), manual + one-click entities, JSON export, **case report builder (standalone HTML + Markdown)** |
 | Breaches | **Breacher** (HIBP + XposedOrNot + HudsonRock stealers + LeakCheck + ProxyNova combos + EmailRep → Exposure Index + unified timeline), email check, password exposure, verifier, hash reputation |
 | People | Username sweep, social deep-check (incl. Bluesky), GitHub, StackExchange, Roblox, Chess.com, Lichess, Discord invites, Wikipedia, ORCID, Gravatar |
 | Network | IP, WHOIS/RDAP, DNS×10, TLS, subdomains, headers, stack detect, URL expander, blacklist, portscan, ASN/prefix/IP (RIPEstat), PTR, Wayback, urlscan, page meta |
-| Threat Intel | ThreatFox IOC, URLhaus, Feodo C2, CISA KEV, ransomware feed, Shodan InternetDB, CVE search |
+| Threat Intel | ThreatFox IOC, URLhaus, Feodo C2, CISA KEV, ransomware feed, Shodan InternetDB, CVE search, **GreyNoise verdict** |
 | OathNet | OIDC discovery audit, JWKS hygiene, 16-path OAuth discovery, SAML metadata audit, secret scanner, JWT analyzer |
 | Geo | Nominatim geocode/reverse, world postal codes, UK postcodes |
 | Crypto | BTC/ETH/LTC/DOGE address intel, CoinGecko prices, mempool fees |
 | Company | Wikidata + Wikipedia resolution, logo |
-| Field Recon | Web crawler, DNS brute-force, 4-source subdomain aggregator, WMN-700 sweep, email chase, WordPress audit, takeover detector, archive goldmine, email-security grade, typosquat finder, favicon hash, Tor check, PGP lookup, GitHub code search |
+| Field Recon | Web crawler, DNS brute-force, 4-source subdomain aggregator, WMN-700 sweep, email chase, WordPress audit, takeover detector, archive goldmine, email-security grade, typosquat finder, favicon hash, Tor check, PGP lookup, GitHub code search, **GitHub org recon, npm/PyPI/crates package recon, crt.sh certificate search** |
 | Lab | Hash gen/identify, encode/decode, passwords, time, URL, email-header forensics, IBAN, card Luhn, VIN, MAC, **email pattern generator + verify-all, username variants (social+corporate), dork builder (domain/phone/email/username packs), persona generator, image-intel launchers, **load stress tester (your sites only: ≤500 req, ≤10 concurrent, GET/HEAD, ownership checkbox)** |
 | API Docs | Live in-app endpoint reference |
 
@@ -107,6 +111,11 @@ HIBP_API_KEY=        # full breach data (else XposedOrNot)
 ABSTRACT_API_KEY=    # phone carrier enrichment (else offline parse)
 GITHUB_TOKEN=        # lift GitHub limits
 VIRUSTOTAL_API_KEY=  # noted in hash verdicts
+EMAILREP_KEY=        # EmailRep reputation (breach hub skips it when empty)
+
+# Bot wall (optional — everything works without these)
+TURNSTILE_SITE_KEY=  # public site key: enables captcha widgets on login/signup
+TURNSTILE_SECRET=    # secret key: server verifies captchas (unset = no captcha)
 ```
 
 ## Architecture

@@ -52,7 +52,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   });
   dom.window.fetch = (u, o) => globalThis.fetch(new URL(u, dom.window.location.href).toString(), o);
   dom.window.AbortController = AbortController; // native controller: undici rejects jsdom-realm signals
-  dom.window.eval(appJs + '\n;window.__T={openAuth,show,TOOLS,AUTH,S,apiGet};');
+  dom.window.eval(appJs + '\n;window.__T={openAuth,show,TOOLS,AUTH,S,apiGet,addEntity,buildReport};');
   const T = () => dom.window.__T;
   const q = (s) => dom.window.document.querySelector(s);
   const qa = (s) => [...dom.window.document.querySelectorAll(s)];
@@ -113,7 +113,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     d2.window.AbortController = AbortController;
     if (seed && seed.tok) d2.window.localStorage.setItem('evosint-token', seed.tok);
     if (seed && seed.me) d2.window.localStorage.setItem('evosint-me', seed.me);
-    d2.window.eval(appJs + '\n;window.__T={openAuth,show,TOOLS,AUTH,S,apiGet};');
+    d2.window.eval(appJs + '\n;window.__T={openAuth,show,TOOLS,AUTH,S,apiGet,addEntity,buildReport};');
     await sleep(2500);
     return { d2, errs };
   }
@@ -138,6 +138,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('menu tab opens drawer', q('#side').classList.contains('open'));
   qa('#tabbar button')[0].click(); await sleep(300);
   check('home tab back + drawer shut', q('#v-dash').classList.contains('on') && !q('#side').classList.contains('open') && qa('#tabbar button')[0].classList.contains('on'));
+  check('totp login step present (hidden)', !!q('#li-totp') && !!q('#li-code') && !!q('#liTotpGo'));
+  check('report builder present', !!q('#rep-build') && !!q('#rep-dl') && !!q('#rep-md') && !!q('#rep-title'));
+  T().addEntity('email', 'report-victim@example.com', 'uitest');
+  T().addEntity('domain', 'report-target.example', 'uitest');
+  await sleep(300);
+  q('#rep-title').value = 'UITEST Case File';
+  q('#rep-notes').value = 'Headless verification notes.';
+  q('#rep-build').click(); await sleep(300);
+  const repHtml = q('#rep-out').innerHTML;
+  const repMd = (dom.window._lastReport && dom.window._lastReport.md) || '';
+  check('report builds from ticked entities', repHtml.includes('UITEST Case File') && repMd.includes('report-victim@example.com') && repMd.includes('| email |') && repMd.includes('| domain |'));
+  check('new tool cards mounted', ['ghorg','pkg','certs','greynoise'].every(id=>!!q(`[data-card="${id}"]`)));
+  check('turnstile slots present', !!q('#cf-login') && !!q('#cf-signup'));
 
   console.log(failures === 0 ? '\nALL UI TESTS GREEN' : `\n${failures} FAILURES`);
   srv.kill();

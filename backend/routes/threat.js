@@ -113,4 +113,25 @@ router.get('/internetdb/:ip', async (req, res) => {
   } catch (e) { return fail(res, e.status || 502, e.message || 'InternetDB lookup failed'); }
 });
 
+// GET /api/threat/greynoise/:ip — GreyNoise community: scanner noise or real threat?
+router.get('/greynoise/:ip', async (req, res) => {
+  const ip = String(req.params.ip || '').trim();
+  if (!isValidIP(ip)) return fail(res, 400, 'IPv4/IPv6 required');
+  try {
+    const { data, cached } = await getOrSet(`gn:${ip}`, 86400, async () => {
+      const r = await http.get(`https://api.greynoise.io/v3/community/${encodeURIComponent(ip)}`, { timeout: 12000 });
+      if (r.status === 404) {
+        const msg = r.data && r.data.message ? String(r.data.message) : '';
+        return { observed: false, ip, note: msg || 'Not observed' };
+      }
+      if (r.status !== 200) { const e = new Error('GreyNoise error'); e.status = 502; throw e; }
+      const d = r.data || {};
+      return { observed: true, ip, noise: !!d.noise, riot: !!d.riot,
+        classification: d.classification || null, name: d.name || null,
+        link: d.link || null, last_seen: d.last_seen || null, message: d.message || null };
+    });
+    return ok(res, data, { cached, source: 'greynoise-community' });
+  } catch (e) { return fail(res, e.status || 502, e.message || 'GreyNoise lookup failed'); }
+});
+
 module.exports = router;

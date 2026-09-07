@@ -1,0 +1,14 @@
+{
+  "name": "Evosint — Intelligence Console",
+  "short_name": "Evosint",
+  "description": "Fictional OSINT training console: breach search, username engines, network intel, forensics.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

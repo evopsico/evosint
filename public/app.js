@@ -128,7 +128,15 @@ function renderAccountPane(){
       <div class="brow"><input id="keyLabel" placeholder="key label (e.g. laptop)" style="flex:1;padding:10px 12px;border-radius:8px;border:1px solid var(--border2);background:#000;color:var(--text);outline:none"><button class="btn" id="keyGen" style="flex:none">Generate</button></div>
       <div id="keyNew"></div><div id="keyList" style="margin-top:8px"></div>`
     : `<p style="font-size:12px;color:var(--faint)">API keys are issued to super users.</p>`}
+    <div class="sect">Two-factor (TOTP)</div>
+    <div id="totpZone"></div>
+    ${AUTH.tier==='super' ? `<div class="sect">Backup &amp; restore</div>
+    <div class="brow"><button class="ghost" id="bkExp">Export backup</button><label class="ghost" style="cursor:pointer">Import…<input type="file" id="bkFile" accept="application/json,.json" hidden></label></div>
+    <p style="font-size:11.5px;color:var(--faint)">Full accounts, keys and quotas snapshot. Contains password hashes — guard the file. Import replaces everything.</p>` : ''}
     <div class="brow" style="margin-top:10px"><button class="ghost" id="logoutGo">Log out</button></div>`;
+  renderTotpZone();
+  const be = document.getElementById('bkExp'); if(be) be.onclick = doBackup;
+  const bf = document.getElementById('bkFile'); if(bf) bf.onchange = doRestoreFile;
   document.getElementById('pwGo').onclick = changePw;
   document.getElementById('logoutGo').onclick = doLogout;
   if(AUTH.tier==='super'){
@@ -145,20 +153,65 @@ async function refreshMe(){
     AUTH.username = m.username || 'Guest';
     AUTH.tier = m.tier || 'guest';
     AUTH.left = m.searches_left === 'infinite' ? Infinity : (parseInt(m.searches_left, 10) || 0);
+    AUTH.totp = !!m.totp_enabled;
     saveMeSnapshot();
   }catch{ /* offline — snapshot paint already applied */ }
   renderAccount();
+}
+// Captcha token reader — null when Turnstile isn't configured (server skips it too).
+// Uses the widget ID returned by turnstile.render (getResponse takes an ID, not an element).
+function cfToken(id){
+  try{
+    if(!AUTH.cfSiteKey || typeof turnstile === 'undefined') return null;
+    const wid = window._cfWidgets ? window._cfWidgets[id] : undefined;
+    const t = turnstile.getResponse(wid);
+    return t || null;
+  }catch{ return null; }
 }
 async function doLogin(){
   const u = document.getElementById('li-user').value.trim();
   const p = document.getElementById('li-pass').value;
   const err = document.getElementById('authErr');
   if(!u || !p){ err.textContent='Username + password required'; err.style.display='block'; return; }
+  err.style.display = 'none';
+  document.getElementById('li-totp').style.display = 'none';
   try{
-    const d = await apiPost('/auth/login', { username:u, password:p });
+    const d = await apiPost('/auth/login', { username:u, password:p, cf_token:cfToken('cf-login') });
+    cfReset('cf-login');
+    if(d.data && d.data.totp_required){
+      AUTH.tmp = d.data.tmp;
+      AUTH.tmpUser = d.data.username || u;
+      document.getElementById('li-totp').style.display = 'block';
+      document.getElementById('li-code').value = '';
+      document.getElementById('li-code').focus();
+      toast('Two-factor code required');
+      return;
+    }
     AUTH.token = d.data.token;
     TokenStore.set(AUTH.token, document.getElementById('li-remember')?.checked !== false);
     await refreshMe(); closeAuth(); toast('Welcome back, ' + AUTH.username);
+  }catch(e){ err.textContent = e.message; err.style.display='block'; }
+}
+function cfReset(id){
+  try{
+    if(typeof turnstile !== 'undefined' && window._cfWidgets && window._cfWidgets[id] !== undefined) turnstile.reset(window._cfWidgets[id]);
+  }catch{}
+}
+// Second login step: 6-digit app code, or a single-use backup code.
+async function doTotpVerify(){
+  const err = document.getElementById('authErr');
+  const useBackup = document.getElementById('li-totp-mode').dataset.backup === '1';
+  const val = document.getElementById('li-code').value.trim();
+  if(!val){ err.textContent = useBackup ? 'Enter a backup code' : 'Enter the 6-digit code'; err.style.display='block'; return; }
+  err.style.display = 'none';
+  try{
+    const body = useBackup ? { tmp:AUTH.tmp, backup_code:val } : { tmp:AUTH.tmp, code:val };
+    const d = await apiPost('/auth/totp/verify', body);
+    AUTH.token = d.data.token;
+    AUTH.tmp = null;
+    TokenStore.set(AUTH.token, document.getElementById('li-remember')?.checked !== false);
+    await refreshMe(); closeAuth();
+    toast('Welcome back, ' + AUTH.username + (d.data.backup_remaining !== undefined ? ` (${d.data.backup_remaining} backup codes left)` : ''));
   }catch(e){ err.textContent = e.message; err.style.display='block'; }
 }
 async function doSignup(){
@@ -169,10 +222,12 @@ async function doSignup(){
   const err = document.getElementById('authErr');
   if(p1 !== p2){ err.textContent='Passwords do not match'; err.style.display='block'; return; }
   try{
-    const d = await apiPost('/auth/signup', { username:u, password:p1, repeat:p2, dob });
+    const d = await apiPost('/auth/signup', { username:u, password:p1, repeat:p2, dob, cf_token:cfToken('cf-signup') });
     AUTH.token = d.data.token;
     TokenStore.set(AUTH.token, true); // new accounts always persist
-    await refreshMe(); closeAuth(); toast('Account created — 50 scans, ' + AUTH.username);
+    await refreshMe(); closeAuth();
+    toast(d.data.tier === 'super' ? 'Account created — INFINITE scans (first super), ' + AUTH.username : 'Account created — 50 scans, ' + AUTH.username);
+    cfReset('cf-signup');
   }catch(e){ err.textContent = e.message; err.style.display='block'; }
 }
 function doLogout(){
@@ -187,6 +242,66 @@ async function changePw(){
   if(nx !== nx2){ toast('New passwords do not match'); return; }
   try{ await apiPost('/auth/password', { current:cur, next:nx }); toast('Password changed'); renderAccountPane(); }
   catch(e){ toast(e.message); }
+}
+// ---- TOTP panel (states render into #totpZone) ----
+function renderTotpZone(){
+  const z = document.getElementById('totpZone'); if(!z) return;
+  if(AUTH.totp){
+    z.innerHTML = `<p style="font-size:12.5px">${badge('2FA ON','g')} <span style="color:var(--muted)">App codes required at login. Backup codes were shown once at setup.</span></p>
+      <div class="row2" style="margin-top:8px"><div class="field"><label>Password to disable</label><input type="password" id="totp-off-pw" autocomplete="current-password"></div>
+      <div class="field"><label>&nbsp;</label><button class="ghost" id="totpOffGo" style="width:100%">Disable 2FA</button></div></div>`;
+    document.getElementById('totpOffGo').onclick = async ()=>{
+      try{ await apiPost('/auth/totp/disable', { password:document.getElementById('totp-off-pw').value }); toast('2FA disabled'); await refreshMe(); }
+      catch(e){ toast(e.message); }
+    };
+    return;
+  }
+  z.innerHTML = `<p style="font-size:12.5px;color:var(--muted)">Authenticator-app codes plus 8 one-time backup codes. Takes a minute.</p>
+    <div class="brow"><button class="btn" id="totpSetupGo">Enable 2FA ▸</button></div><div id="totpSetup" style="margin-top:8px"></div>`;
+  document.getElementById('totpSetupGo').onclick = async ()=>{
+    try{
+      const d = await apiPost('/auth/totp/setup', {});
+      const s = d.data || {};
+      document.getElementById('totpSetup').innerHTML =
+        `<div class="field"><label>1 · Add this key to your authenticator app</label><div class="mono" id="totpSec" style="cursor:pointer">${esc(s.secret||'')}</div></div>
+         <div class="brow"><button class="mini" id="totpCopySec">Copy key</button><button class="mini" id="totpCopyUri">Copy setup link</button></div>
+         <div class="field" style="margin-top:8px"><label>2 · Enter the 6-digit code to activate</label><input id="totp-code" inputmode="numeric" maxlength="6" placeholder="123456"></div>
+         <div class="brow"><button class="btn" id="totpEnableGo">Activate ▸</button></div><div id="totpBackup"></div>`;
+      document.getElementById('totpCopySec').onclick = e=>copyT(s.secret||'');
+      document.getElementById('totpCopyUri').onclick = e=>copyT(s.uri||'');
+      document.getElementById('totpEnableGo').onclick = async ()=>{
+        try{
+          const e2 = await apiPost('/auth/totp/enable', { code:document.getElementById('totp-code').value.trim() });
+          const codes = (e2.data && e2.data.backup_codes) || [];
+          document.getElementById('totpBackup').innerHTML = `<p style="font-size:12px;color:var(--amber);margin:8px 0 4px">Save these backup codes now — each works once, never shown again:</p><div class="mono" id="totpCodes" style="cursor:pointer">${esc(codes.join('\n'))}</div>`;
+          document.getElementById('totpCodes').onclick = ev=>copyT(ev.target.innerText);
+          await refreshMe(); toast('Two-factor enabled');
+        }catch(err){ toast(err.message); }
+      };
+    }catch(e){ toast(e.message); }
+  };
+}
+// ---- super backup / restore ----
+async function doBackup(){
+  try{
+    const d = await apiGet('/auth/backup');
+    dl(`evosint-backup-${new Date().toISOString().slice(0,10)}.json`, JSON.stringify(d.data, null, 2));
+    toast('Backup downloaded — guard the file');
+  }catch(e){ toast(e.message); }
+}
+async function doRestoreFile(ev){
+  const f = ev.target && ev.target.files && ev.target.files[0];
+  if(!f) return;
+  let parsed = null;
+  try{ parsed = JSON.parse(await f.text()); }
+  catch{ toast('Not valid JSON'); ev.target.value=''; return; }
+  if(!window.confirm('Replace ALL accounts, keys and quotas with this backup? This cannot be undone.')){ ev.target.value=''; return; }
+  try{
+    const d = await apiPost('/auth/backup/restore', { data:parsed });
+    toast(`Restored — ${d.data.users} users, ${d.data.keys} keys`);
+    await refreshMe();
+  }catch(e){ toast(e.message); }
+  ev.target.value = '';
 }
 async function loadKeys(){
   const z = document.getElementById('keyList'); if(!z) return;
@@ -226,6 +341,11 @@ function injectAuth(){
     <div id="auth-login">
       <div class="field"><label>Username</label><input id="li-user" autocomplete="username" placeholder="evo"></div>
       <div class="field"><label>Password</label><input id="li-pass" type="password" autocomplete="current-password"></div>
+      <div id="li-totp" style="display:none">
+        <div class="field"><label>Two-factor code</label><input id="li-code" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" maxlength="12"></div>
+        <div class="brow"><button class="btn" id="liTotpGo">Verify ▸</button><button class="ghost" id="li-totp-mode" data-backup="0">Use backup code</button></div>
+      </div>
+      <div id="cf-login" style="margin:6px 0"></div>
       <label class="checkline"><input type="checkbox" id="li-remember" checked> Remember me on this device</label>
       <div class="brow"><button class="btn" id="liGo">Log in ▸</button></div>
     </div>
@@ -234,6 +354,7 @@ function injectAuth(){
       <div class="row2"><div class="field"><label>Password (8+ chars)</label><input id="su-pass" type="password" autocomplete="new-password"></div>
       <div class="field"><label>Repeat password</label><input id="su-pass2" type="password" autocomplete="new-password"></div></div>
       <div class="field"><label>Date of birth</label><input id="su-dob" type="date" min="1900-01-01"></div>
+      <div id="cf-signup" style="margin:6px 0"></div>
       <p style="font-size:11.5px;color:var(--faint)">Free accounts get <b>50 scans</b>. Guests get 2.</p>
       <div class="brow"><button class="btn" id="suGo">Create account ▸</button></div>
     </div>
@@ -245,6 +366,17 @@ function injectAuth(){
   back.addEventListener('mousedown', e=>{ if(e.target.id==='authBack') closeAuth(); });
   document.getElementById('liGo').onclick = doLogin;
   document.getElementById('suGo').onclick = doSignup;
+  document.getElementById('liTotpGo').onclick = doTotpVerify;
+  document.getElementById('li-totp-mode').onclick = (e)=>{
+    const b = e.currentTarget;
+    const backup = b.dataset.backup !== '1';
+    b.dataset.backup = backup ? '1' : '0';
+    b.textContent = backup ? 'Use app code' : 'Use backup code';
+    document.querySelector('#li-totp .field label').textContent = backup ? 'Backup code' : 'Two-factor code';
+    document.getElementById('li-code').value = '';
+    document.getElementById('li-code').focus();
+  };
+  document.getElementById('li-code').addEventListener('keydown', e=>{ if(e.key==='Enter') doTotpVerify(); });
   document.getElementById('li-pass').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
   document.getElementById('su-pass2').addEventListener('keydown', e=>{ if(e.key==='Enter') doSignup(); });
 }
@@ -320,7 +452,7 @@ async function runTool(id, btn){
   const need = t.inputs.find(i=>i.type!=='check' && i.type!=='select');
   if(need && !String(vals[need.id]||'').trim()){ box.classList.add('show'); body.innerHTML='<div class="load">⚠️ Enter a value first.</div>'; setState(card,false,'NEED INPUT'); return; }
   btn.disabled = true; box.classList.add('show'); setState(card,null,'SCANNING…');
-  body.innerHTML = '<div class="load"><div class="spin"></div>Querying sources…</div>';
+  body.innerHTML = '<div class="skel" aria-hidden="true"><i class="w80"></i><i></i><i class="w60"></i><i class="tall"></i></div><div class="load" style="padding-top:6px"><div class="spin"></div>Querying sources…</div>';
   const t0 = performance.now();
   try{
     const data = await t.run(vals);
@@ -528,6 +660,30 @@ const TOOLS = [
 { id:'secrets', view:'oath', icon:'🕵️', title:'Secret Scanner', desc:'Page + same-origin JS sweep. Matches redacted.', tag:'secrets', timeout:60000,
   inputs:[{id:'v',label:'URL',ph:'https://example.com'}], run:({v})=>apiPost('/oauth/secretscan',{url:v.trim()},60000),
   render:d=>{const x=d.data||{};const bad=(x.findings||[]).length+(x.exposures||[]).length;return `<p style="margin-bottom:8px">${bad?badge(bad+' CANDIDATES','r'):badge('clean','g')} <span style="color:var(--faint);font-size:11px">${esc(x.files_scanned||0)} files</span></p><div style="font-size:12px;color:var(--muted);margin-bottom:6px">${esc(x.verdict||'')}</div>`+tbl(['Type','File','Match'],[...(x.exposures||[]),...(x.findings||[])].map(f=>[badge(f.type,'a'),`<span class="mono" style="border:none;background:none;padding:0">${esc(f.file)}</span>`,`<span class="mono" style="border:none;background:none;padding:0">${esc(f.match)}</span>`]));} },
+{ id:'ghorg', view:'recon', icon:'🏢', title:'GitHub Org Recon', desc:'Org profile, top repos, public members.', tag:'intel',
+  inputs:[{id:'v',label:'Org name',ph:'github'}], run:({v})=>apiGet(`/recon/ghorg/${encodeURIComponent(v.trim())}`),
+  render:d=>{const x=d.data||{};return kv({'Org':esc(x.name||x.login||''),'About':esc((x.description||'').slice(0,160)||'—'),'Repos':esc(x.public_repos??'—'),'Followers':esc(x.followers??'—'),'Location':esc(x.location||'—'),'Blog':esc(x.blog||'—'),'Since':esc(x.created||'—')})+
+    `<div class="sect">Top repos</div>`+((x.top_repos||[]).map(r=>`<div><b>${esc(r.name)}</b> ${badge('★ '+(r.stars??0),'a')} <span style="color:var(--muted)">${esc(r.language||'')}</span></div>`).join('')||'<span style="color:var(--faint)">none</span>')+
+    `<div class="sect">Public members</div><div class="chips">${(x.public_members||[]).map(m=>`<span class="chip">${esc(m.login)}</span>`).join('')||'<span style="color:var(--faint)">none listed</span>'}</div>`;},
+  entity:(d,c)=>[{type:'org',value:(c.querySelector('input')||{}).value||''}] },
+{ id:'pkg', view:'recon', icon:'📦', title:'Package Recon', desc:'npm / PyPI / crates.io metadata, maintainers, deps.', tag:'supply',
+  inputs:[{id:'reg',label:'Registry',type:'select',options:['npm','pypi','crates']},{id:'v',label:'Package',ph:'express'}],
+  run:({v,reg})=>apiGet(`/recon/pkg/${encodeURIComponent(reg)}/${encodeURIComponent(v.trim())}`),
+  render:d=>{const x=d.data||{};return kv({'Package':esc(x.name||''),'Registry':esc(x.registry||''),'Latest':esc(x.latest||'—'),'License':esc(x.license||'—'),'Description':esc(x.description||'—')})+
+    (x.maintainers?`<div><b>Maintainers:</b> ${esc(x.maintainers.join(', '))}</div>`:'')+
+    (x.author?`<div><b>Author:</b> ${esc(x.author)} ${esc(x.author_email||'')}</div>`:'')+
+    (x.downloads!=null?`<div><b>Downloads:</b> ${esc(Number(x.downloads).toLocaleString())}</div>`:'')+
+    (x.deps&&x.deps.length?`<div class="sect">Dependencies</div><div class="chips">${x.deps.map(s=>`<span class="chip">${esc(s)}</span>`).join('')}</div>`:'')+
+    (x.homepage?`<div style="margin-top:6px">${link(x.homepage,'homepage')}</div>`:'')+(x.repository?` <div>${link(x.repository,'repository')}</div>`:'');} },
+{ id:'certs', view:'recon', icon:'📜', title:'Certificate Search', desc:'crt.sh identity search — orgs, names, issuers.', tag:'certs',
+  inputs:[{id:'v',label:'Org or name',ph:'google'}], run:({v})=>apiGet(`/recon/certs?q=${encodeURIComponent(v.trim())}`),
+  render:d=>tbl(['Common name','Issuer','Valid'],(d.data||[]).map(c=>[`<span class="mono" style="border:none;background:none;padding:0">${esc(c.common_name)}</span>`,esc(c.issuer||'—'),esc((c.not_before||'').slice(0,10)+' → '+(c.not_after||'').slice(0,10))])) },
+{ id:'greynoise', view:'threat', icon:'📡', title:'GreyNoise Check', desc:'Internet scanner noise or genuine threat? Community verdict.', tag:'intel',
+  inputs:[{id:'v',label:'IP address',ph:'8.8.8.8'}], run:({v})=>apiGet(`/threat/greynoise/${encodeURIComponent(v.trim())}`),
+  render:d=>{const x=d.data||{};if(!x.observed)return `<p>${badge('NOT OBSERVED','g')}</p><p style="color:var(--muted);font-size:12.5px">${esc(x.note||'')}</p>`;
+    return `<p style="margin-bottom:8px">${x.noise?badge('BACKGROUND NOISE','a'):badge('SEEN — investigate','r')} ${x.riot?badge('BENIGN SERVICE','g'):''}</p>`+
+    kv({'Name':esc(x.name||'—'),'Class':esc(x.classification||'—'),'Last seen':esc(x.last_seen||'—'),'Ref':x.link?link(x.link,'GreyNoise ↗'):'—'})+(x.message?`<p style="color:var(--muted);font-size:12px">${esc(x.message)}</p>`:'');},
+  entity:(d,c)=>[{type:'ip',value:(c.querySelector('input')||{}).value||''}] },
 /* ---- lab ---- */
 { id:'hash', view:'lab', icon:'🔐', title:'Hash Generator', desc:'6 algorithms via POST. No URL-length bugs.', tag:'crypto',
   inputs:[{id:'algo',label:'Algorithm',type:'select',options:['sha256','md5','sha1','sha512','sha384','ripemd160']},{id:'v',label:'Text',ph:'hello world',type:'textarea'}], run:({v,algo})=>apiPost('/hash',{algorithm:algo,text:v}),
@@ -742,7 +898,7 @@ async function runSweep(){
   const u = $('#moduser').value.trim();
   if(!u){ toast('Enter a username first'); return; }
   const btn = $('#sweepBtn'); btn.disabled = true; sweepRes = null; renderMods();
-  $('#sweepstate').innerHTML = '<div class="load"><div class="spin"></div>Sweeping engines… (~10–30s first run, cached after)</div>';
+  $('#sweepstate').innerHTML = '<div class="skel"><i class="w80"></i><i></i><i class="w60"></i><i></i></div><div class="load" style="padding-top:6px"><div class="spin"></div>Sweeping engines… (~10–30s first run, cached after)</div>';
   try{
     const d = await apiGet(`/username/${encodeURIComponent(u)}`, 120000);
     sweepRes = d.data || [];
@@ -792,9 +948,15 @@ async function runSearch(forced){
   const v = $('#sin').value.trim();
   if(!v){ toast('Enter a target in Query'); return; }
   const box = $('#sresults');
-  box.innerHTML = `<div class="load"><div class="spin"></div>Running ${ids.length} engine${ids.length>1?'s':''} against <b>${esc(v)}</b>…</div>`;
+  box.innerHTML = `<div class="pstat" id="s-prog-t">Starting ${ids.length} engine${ids.length>1?'s':''}…</div><div class="pbar"><i id="s-prog-b"></i></div><div class="skel"><i class="w80"></i><i></i><i class="w60"></i></div>`;
   $('#sgo').disabled = true;
   const out = [];
+  const paintProg = ()=>{
+    const b = document.getElementById('s-prog-b'), t = document.getElementById('s-prog-t');
+    if(!b || !t || !document.body.contains(box)) return;
+    b.style.width = Math.round(out.length/ids.length*100) + '%';
+    t.textContent = `${out.length} / ${ids.length} engines done…`;
+  };
   await Promise.all(ids.map(async (id)=>{
     const t = TOOLS.find(x=>x.id===id);
     if(!t){ out.push({id, title:id, ok:false, error:'engine missing'}); return; }
@@ -804,7 +966,7 @@ async function runSearch(forced){
     const t0 = performance.now();
     try{ const data = await t.run(vals); out.push({id, title:t.title, ok:true, ms:Math.round(performance.now()-t0), data, vals}); }
     catch(e){ out.push({id, title:t.title, ok:false, ms:Math.round(performance.now()-t0), error:e.message}); }
-    if(document.body.contains(box)) box.innerHTML = `<div class="load"><div class="spin"></div>${out.length} / ${ids.length} engines done…</div>`;
+    paintProg();
   }));
   const okN = out.filter(o=>o.ok).length;
   box.innerHTML = `<p style="margin-bottom:12px">${badge(`${okN}/${ids.length} engines ok`, okN?'g':'r')} ${badge(tab,'b')} <button class="mini" id="s-all-graph">+ Graph all</button> <button class="mini" id="s-exp">Export JSON</button></p>` +
@@ -843,7 +1005,7 @@ function ringSVG(score){
 async function runExposure(){
   const v = $('#exp-email').value.trim();
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)){ toast('Enter an email'); return; }
-  $('#exp-out').innerHTML = '<div class="load"><div class="spin"></div>Querying breach sources…</div>';
+  $('#exp-out').innerHTML = '<div class="skel"><i class="w60"></i><i></i></div><div class="load" style="padding-top:6px"><div class="spin"></div>Querying breach sources…</div>';
   try{
     const d = await apiPost('/breacher', { email:v }, 90000);
     const x = d.data || {};
@@ -863,7 +1025,7 @@ async function runExposure(){
 function renderGraph(){
   const list = $('#entlist'), wrap = $('#gwrap');
   if(!list) return;
-  list.innerHTML = S.entities.length ? tbl(['Type','Value','Source',''], S.entities.map((e,i)=>[badge(e.type,'b'),`<span class="mono" style="border:none;background:none;padding:0">${esc(e.value.slice(0,70))}</span>`,esc(e.source||''),`<button class="mini" data-del="${i}">✕</button>`])) : '<p style="color:var(--faint)">Empty. Run any tool and press <b>+ Graph</b>, or add manually below.</p>';
+  list.innerHTML = S.entities.length ? tbl(['✓','Type','Value','Source',''], S.entities.map((e,i)=>[`<input type="checkbox" data-rep="${i}" checked>`,badge(e.type,'b'),`<span class="mono" style="border:none;background:none;padding:0">${esc(e.value.slice(0,70))}</span>`,esc(e.source||''),`<button class="mini" data-del="${i}">✕</button>`])) : '<p style="color:var(--faint)">Empty. Run any tool and press <b>+ Graph</b>, or add manually below.</p>';
   $$('#entlist [data-del]').forEach(b=>b.onclick=()=>{ S.entities.splice(+b.dataset.del,1); saveEnts(); renderGraph(); });
   if(!wrap) return;
   const n = S.entities.slice(0,40);
@@ -902,12 +1064,26 @@ function findLinks(n){
 function iconFor(t){ return {email:'E',domain:'D',ip:'I',username:'U',hash:'H',wallet:'W',company:'C',phone:'P',asn:'A',geo:'G',ioc:'X',profile:'L',url:'L',note:'N'}[t]||'•'; }
 
 /* ================= DASH / HISTORY / API DOCS ================= */
+// Animated counters (skip animation for reduced-motion users).
+function countUp(el, to){
+  if(!el) return;
+  to = Number(to) || 0;
+  if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches){ el.textContent = to; return; }
+  const from = parseInt(el.textContent, 10) || 0;
+  if(from === to){ el.textContent = to; return; }
+  const t0 = performance.now(), dur = 600;
+  (function tick(t){
+    const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+    el.textContent = Math.round(from + (to - from) * e);
+    if(k < 1) requestAnimationFrame(tick);
+  })(t0);
+}
 function renderDash(){
   const now = Date.now(), day = now-864e5, week = now-7*864e5;
   const ts = S.history.map(h=>new Date(h.t).getTime()).filter(Number.isFinite);
   const el = id=>document.getElementById(id);
-  if(el('st-today')) el('st-today').textContent = ts.filter(t=>t>day).length;
-  if(el('st-week')) el('st-week').textContent = ts.filter(t=>t>week).length;
+  countUp(el('st-today'), ts.filter(t=>t>day).length);
+  countUp(el('st-week'), ts.filter(t=>t>week).length);
   const tracked = S.history.filter(h=>h.ok===true||h.ok===false);
   if(el('st-rate')) el('st-rate').textContent = tracked.length ? Math.round(tracked.filter(h=>h.ok).length/tracked.length*100)+'%' : '—';
   const h = S.history.slice(0,8);
@@ -953,7 +1129,11 @@ const API_DOCS = [
  ['GET','/api/company/:name','Wikidata + Wikipedia'],
  ['POST','/api/recon/crawl','Same-origin crawler'],['POST','/api/recon/dns-brute','Built-in DNS brute-force'],['POST','/api/recon/subdomains','4-source sub aggregator'],['GET','/api/recon/wmn/:u','WhatsMyName 700 sweep'],
  ['POST','/api/recon/chase','Name→email chase'],['POST','/api/recon/wpcheck','WordPress audit'],['POST','/api/recon/takeover','Subdomain takeover'],['POST','/api/recon/goldmine','Wayback sensitive files'],
- ['GET','/api/recon/emailsec/:domain','SPF/DMARC/DKIM grade'],['POST','/api/recon/typosquat','Squat gen + DNS'],['GET','/api/recon/favicon-hash?url=','mmh3 Shodan pivot'],['GET','/api/recon/tor/:ip','Tor relay check'],['GET','/api/recon/pgp/:email','PGP keyservers'],['GET','/api/recon/github-code?q=','GH code (token)'],
+ ['GET','/api/recon/emailsec/:domain','SPF/DMARC/DKIM grade'],['POST','/api/recon/typosquat','Squat gen + DNS'],['GET','/api/recon/favicon-hash?url=','mmh3 Shodan pivot'],['GET','/api/recon/tor/:ip','Tor relay check'],['GET','/api/recon/pgp/:email','PGP keyservers'],  ['GET','/api/recon/github-code?q=','GH code (token)'],
+  ['GET','/api/recon/ghorg/:org','GitHub org intel'],['GET','/api/recon/pkg/:reg/:name','npm/PyPI/crates meta'],['GET','/api/recon/certs?q=','crt.sh identity'],
+  ['GET','/api/threat/greynoise/:ip','GreyNoise verdict'],
+  ['GET','/api/auth/config','Public auth knobs'],['POST','/api/auth/totp/setup','TOTP secret'],['POST','/api/auth/totp/enable','TOTP activate'],['POST','/api/auth/totp/disable','TOTP off'],['POST','/api/auth/totp/verify','TOTP login step'],
+  ['GET','/api/auth/backup','Full export (super)'],['POST','/api/auth/backup/restore','Full restore (super)'],
 ];
 function renderApiDocs(){
   $('#apidocs').innerHTML = tbl(['Method','Endpoint','What'], API_DOCS.map(([m,p,d])=>[badge(m, m==='GET'?'b':'a'),`<span class="mono" style="border:none;background:none;padding:0">${esc(p)}</span>`,esc(d)]))
@@ -1006,7 +1186,12 @@ function buildViews(){
   v('graph', `<div class="casehead"><span class="no">CASE FILE <b data-caseno></b></span><span class="stamp">Link chart · Fictional</span></div>
   <div class="brow" style="margin-bottom:12px;max-width:860px"><input id="ent-type" placeholder="type (email, domain, ip…)" style="width:150px;padding:10px 12px;border-radius:10px;border:1px solid var(--border2);background:#000;color:var(--text);outline:none"><input id="ent-val" placeholder="value…" style="flex:1;padding:10px 12px;border-radius:10px;border:1px solid var(--border2);background:#000;color:var(--text);font-family:var(--mono);outline:none"><button class="btn" id="ent-add" style="flex:none">+ Add</button><button class="ghost" id="ent-clear">Clear</button><button class="ghost" id="ent-link">Auto-link: off</button><button class="ghost" id="ent-exp">Export</button></div>
     <div id="gwrap"><p style="padding:30px;text-align:center;color:var(--faint)">No entities yet.</p></div>
-    <div class="sect">Entities (click node to copy)</div><div id="entlist"></div>`) +
+    <div class="sect">Entities (click node to copy · tick for report)</div><div id="entlist"></div>
+    <div class="sect">Case report</div>
+    <div class="card"><div class="field"><label>Report title</label><input id="rep-title" placeholder="Subject profile — case EV-…"></div>
+    <div class="field"><label>Analyst notes</label><textarea id="rep-notes" placeholder="What was found, confidence, next steps…"></textarea></div>
+    <div class="brow"><button class="btn" id="rep-build">Build report ▸</button><button class="ghost" id="rep-dl" disabled>Download HTML</button><button class="ghost" id="rep-md" disabled>Copy Markdown</button></div>
+    <div id="rep-out" style="margin-top:10px"></div></div>`) +
   v('breach', `<div class="grid" data-cards="breach"></div>`) +
   v('people', `<div class="grid" data-cards="people"></div>`) +
   v('net', `<div class="grid" data-cards="net"></div>`) +
@@ -1124,6 +1309,42 @@ function bindPal(){
   });
 }
 
+/* ================= BOOT HELPERS (turnstile, PWA) ================= */
+// Turnstile bot wall: activates only when the server publishes a site key.
+// Without keys the widgets never render and the server skips verification.
+async function initTurnstile(){
+  try{
+    const d = await apiGet('/auth/config', 10000);
+    const key = d && d.data && d.data.turnstileSiteKey;
+    if(!key) return;
+    AUTH.cfSiteKey = key;
+    await new Promise((res, rej)=>{
+      if(typeof turnstile !== 'undefined') return res();
+      const s = document.createElement('script');
+      s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+      s.async = true; s.defer = true;
+      s.onload = res; s.onerror = ()=>rej(new Error('captcha-load'));
+      document.head.appendChild(s);
+    });
+    window._cfWidgets = window._cfWidgets || {};
+    for (const id of ['cf-login', 'cf-signup']) {
+      const el = document.getElementById(id);
+      if(el && !el.dataset.done){
+        window._cfWidgets[id] = turnstile.render('#' + id, { sitekey:key, theme:'dark', size:'compact' });
+        el.dataset.done = '1';
+      }
+    }
+  }catch{ /* offline, blocked CDN, or unconfigured — server skips captcha too */ }
+}
+// PWA shell: cache the console chrome, never API data (see sw.js).
+function registerSW(){
+  try{
+    if('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+      navigator.serviceWorker.register('/sw.js').catch(()=>{});
+    }
+  }catch{}
+}
+
 /* ================= BOOT ================= */
 buildViews();
 $$('[data-caseno]').forEach(el=>el.textContent=S.caseNo);
@@ -1136,6 +1357,8 @@ renderHist();
 bindPal();
 loadCatalog();
 refreshMe();
+initTurnstile();
+registerSW();
 show('dash');
 
 $('#burger').onclick = ()=>{ $('#side').classList.toggle('open'); const sb = document.getElementById('sideback'); if(sb) sb.classList.toggle('open'); };
@@ -1160,6 +1383,34 @@ $('#ent-add').onclick = ()=>{ const t=$('#ent-type').value.trim()||'note', v=$('
 $('#ent-clear').onclick = ()=>{ S.entities=[]; saveEnts(); renderGraph(); };
 $('#ent-link').onclick = ()=>{ S.autolink=!S.autolink; $('#ent-link').textContent='Auto-link: '+(S.autolink?'on':'off'); $('#ent-link').classList.toggle('on',S.autolink); renderGraph(); };
 $('#ent-exp').onclick = ()=>dl(`case-${S.caseNo}.json`, JSON.stringify({case:S.caseNo, exported:new Date().toISOString(), entities:S.entities},null,2));
+$('#rep-build').onclick = buildReport;
+$('#rep-dl').onclick = ()=>{
+  if(!window._lastReport) return toast('Build the report first');
+  const slug = (window._lastReport.title || 'case').toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,60) || 'case';
+  dl(`${slug}.html`, window._lastReport.html, 'text/html');
+};
+$('#rep-md').onclick = ()=>{ if(!window._lastReport) return toast('Build the report first'); copyT(window._lastReport.md); };
+// ---- case report builder (ticked entities → standalone HTML + Markdown) ----
+function selectedEntities(){
+  const boxes = $$('#entlist [data-rep]');
+  if(!boxes.length) return S.entities.slice(0,40);
+  const idx = new Set(boxes.filter(b=>b.checked).map(b=>+b.dataset.rep));
+  return S.entities.filter((_,i)=>idx.has(i)).slice(0,40);
+}
+function buildReport(){
+  const list = selectedEntities();
+  const title = ($('#rep-title').value.trim() || 'Case ' + S.caseNo);
+  const notes = $('#rep-notes').value.trim();
+  if(!list.length){ toast('Add entities first (or tick some below)'); return; }
+  const cell = s=>String(s ?? '').replace(/\|/g,'\\|');
+  const rows = list.map(e=>`<tr><td>${esc(e.type)}</td><td>${esc(e.value)}</td><td>${esc(e.source||'')}</td></tr>`).join('');
+  const md = `# ${title}\n\n_Case ${S.caseNo} · ${new Date().toISOString().slice(0,10)} · Evosint_\n\n${notes?notes+'\n\n':''}## Entities (${list.length})\n\n| Type | Value | Source |\n|---|---|---|\n` + list.map(e=>`| ${cell(e.type)} | ${cell(e.value)} | ${cell(e.source||'')} |`).join('\n') + '\n';
+  window._lastReport = { title, md,
+    html: `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:system-ui,sans-serif;max-width:820px;margin:32px auto;padding:0 16px;color:#111}table{border-collapse:collapse;width:100%}td,th{border:1px solid #999;padding:6px 9px;text-align:left;font-size:13px}.meta{color:#555;font-size:12px}pre{white-space:pre-wrap;background:#f4f4f4;padding:12px;border-radius:8px}</style></head><body><h1>${esc(title)}</h1><p class="meta">Case ${esc(S.caseNo)} · ${esc(new Date().toLocaleString())} · generated by Evosint (fictional training tool)</p>${notes?`<pre>${esc(notes)}</pre>`:''}<h2>Entities (${list.length})</h2><table><tr><th>Type</th><th>Value</th><th>Source</th></tr>${rows}</table></body></html>` };
+  $('#rep-out').innerHTML = `<div class="plat f"><h4>${esc(title)} ${badge(list.length+' entities','b')}</h4><div style="font-size:12px;color:var(--muted)">Preview ready — download the standalone HTML file or copy Markdown.</div></div>`;
+  $('#rep-dl').disabled = false; $('#rep-md').disabled = false;
+  toast('Report built');
+}
 document.addEventListener('click', e=>{
   const b = e.target.closest('[data-act]'); if(!b) return;
   if(b.dataset.act==='verify-all') verifyAllPatterns(b);

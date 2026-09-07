@@ -31,13 +31,16 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       // No inline <script> anywhere (all handlers are addEventListener/delegated).
-      scriptSrc: ["'self'"],
+      // Cloudflare Turnstile (bot captcha) loads only when configured — see /api/auth/config.
+      scriptSrc: ["'self'", 'https://challenges.cloudflare.com'],
       // Inline style="" attributes are used for dynamic result rendering.
       styleSrc: ["'self'", 'https://cdn.jsdelivr.net', "'unsafe-inline'"],
       fontSrc: ["'self'", 'https://cdn.jsdelivr.net', 'data:'],
       // Favicons, avatars, logos load cross-origin by design.
       imgSrc: ["'self'", 'https:', 'data:'],
       connectSrc: ["'self'"],
+      // Turnstile renders its checkbox in a same-vendor iframe.
+      frameSrc: ['https://challenges.cloudflare.com'],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
       formAction: ["'self'"],
@@ -161,11 +164,22 @@ app.get('/', (req, res) => {
 app.get(['/health', '/api/health'], (req, res) => {
   res.json({
     status: 'OK',
-    version: '2.11.1',
+    version: '2.12.0',
     uptime_seconds: Math.round(process.uptime()),
     timestamp: new Date().toISOString(),
   });
 });
+
+// PWA shell files live at the root (service workers only control their own
+// directory and below, so /sw.js must NOT live under /public).
+for (const f of ['sw.js', 'manifest.webmanifest', 'icon.svg']) {
+  app.get('/' + f, (req, res) => {
+    NO_STORE(res);
+    res.sendFile(path.resolve(__dirname, '..', f), (err) => {
+      if (err && !res.headersSent) res.status(404).json({ success: false, error: 'Not found' });
+    });
+  });
+}
 
 // ---------- 404 + errors (never leak stacks) ----------
 app.use((req, res) => res.status(404).json({ success: false, error: 'Route not found' }));

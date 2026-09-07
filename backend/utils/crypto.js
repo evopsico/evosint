@@ -113,5 +113,67 @@ module.exports = {
   encodeText,
   decodeText,
   hashText,
-  generatePassword
+  generatePassword,
+  base32Encode,
+  totpCode,
+  totpVerify,
+  newBackupCodes,
+  sha256hex,
 };
+
+// ---------- TOTP (RFC 6238, SHA-1, dependency-free) ----------
+const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+function base32Encode(buf) {
+  let bits = 0, val = 0, out = '';
+  for (const byte of buf) {
+    val = (val << 8) | byte;
+    bits += 8;
+    while (bits >= 5) { out += B32[(val >>> (bits - 5)) & 31]; bits -= 5; }
+  }
+  if (bits > 0) out += B32[(val << (5 - bits)) & 31];
+  return out;
+}
+function base32Decode(s) {
+  const clean = String(s || '').toUpperCase().replace(/[^A-Z2-7]/g, '');
+  let bits = 0, val = 0;
+  const bytes = [];
+  for (const ch of clean) {
+    val = (val << 5) | B32.indexOf(ch);
+    bits += 5;
+    if (bits >= 8) { bytes.push((val >>> (bits - 8)) & 255); bits -= 8; }
+  }
+  return Buffer.from(bytes);
+}
+function totpCode(secretB32, timeMs, step = 30, digits = 6) {
+  const counter = Math.floor((timeMs || Date.now()) / 1000 / step);
+  const msg = Buffer.alloc(8);
+  msg.writeBigUInt64BE(BigInt(counter));
+  const hmac = crypto.createHmac('sha1', base32Decode(secretB32)).update(msg).digest();
+  const off = hmac[hmac.length - 1] & 0x0f;
+  const code = ((hmac[off] & 0x7f) << 24) | (hmac[off + 1] << 16) | (hmac[off + 2] << 8) | hmac[off + 3];
+  return String(code % (10 ** digits)).padStart(digits, '0');
+}
+function totpVerify(secretB32, code, window = 1, nowMs) {
+  const now = nowMs || Date.now();
+  const want = String(code || '').replace(/\D/g, '');
+  if (want.length !== 6) return false;
+  for (let w = -window; w <= window; w++) {
+    const got = totpCode(secretB32, now + w * 30000);
+    if (got.length === want.length && crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want))) return true;
+  }
+  return false;
+}
+function sha256hex(s) {
+  return crypto.createHash('sha256').update(String(s)).digest('hex');
+}
+// 8 single-use backup codes (caller stores only the hashes).
+function newBackupCodes() {
+  const pool = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  const out = [];
+  for (let i = 0; i < 8; i++) {
+    let c = '';
+    for (let j = 0; j < 10; j++) c += pool[crypto.randomInt(pool.length)];
+    out.push(c.slice(0, 4) + '-' + c.slice(4));
+  }
+  return out;
+}

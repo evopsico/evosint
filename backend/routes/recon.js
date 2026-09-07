@@ -542,4 +542,108 @@ router.get('/github-code', async (req, res) => {
   } catch (e) { return fail(res, e.status || 502, e.message || 'Code search failed'); }
 });
 
+// GET /api/recon/ghorg/:org — public org profile + top repos + public members
+router.get('/ghorg/:org', async (req, res) => {
+  const org = String(req.params.org || '').trim();
+  if (!/^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$/.test(org)) return fail(res, 400, 'Invalid org name');
+  try {
+    const { data, cached } = await getOrSet(`ghorg:${org.toLowerCase()}`, 3600, async () => {
+      const H = process.env.GITHUB_TOKEN ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {};
+      const [o, repos, members] = await Promise.all([
+        http.get(`https://api.github.com/orgs/${encodeURIComponent(org)}`, { headers: H, timeout: 12000 }),
+        http.get(`https://api.github.com/orgs/${encodeURIComponent(org)}/repos?per_page=10&sort=updated`, { headers: H, timeout: 12000 }),
+        http.get(`https://api.github.com/orgs/${encodeURIComponent(org)}/public_members?per_page=30`, { headers: H, timeout: 12000 }),
+      ]);
+      if (o.status === 404) { const e = new Error('Org not found'); e.status = 404; throw e; }
+      if (o.status !== 200) { const e = new Error('GitHub error'); e.status = 502; throw e; }
+      const d = o.data || {};
+      return {
+        login: d.login, name: d.name || null, description: (d.description || '').slice(0, 300),
+        blog: d.blog || null, email: d.email || null, location: d.location || null,
+        public_repos: d.public_repos ?? null, followers: d.followers ?? null,
+        created: (d.created_at || '').slice(0, 10),
+        top_repos: (Array.isArray(repos.data) ? repos.data : []).map((r) => ({ name: r.name, stars: r.stargazers_count, language: r.language, url: r.html_url })),
+        public_members: (Array.isArray(members.data) ? members.data : []).map((m) => ({ login: m.login, url: m.html_url })),
+      };
+    });
+    return ok(res, data, { cached, source: 'github' });
+  } catch (e) { return fail(res, e.status || 502, e.message || 'Org lookup failed'); }
+});
+
+// GET /api/recon/pkg/:registry/:name — npm / PyPI / crates.io metadata (all keyless)
+const PKG = {
+  npm: async (name) => {
+    const r = await http.get(`https://registry.npmjs.org/${encodeURIComponent(name)}`, { timeout: 12000 });
+    if (r.status === 404) return null;
+    if (r.status !== 200) throw new Error('npm error');
+    const d = r.data || {};
+    const latest = d['dist-tags'] && d['dist-tags'].latest;
+    const lv = (latest && d.versions && d.versions[latest]) || null;
+    return { registry: 'npm', name: d.name, description: (d.description || '').slice(0, 300), latest: latest || null,
+      versions: Object.keys(d.versions || {}).length,
+      maintainers: (d.maintainers || []).map((m) => m.name).slice(0, 10),
+      license: (lv && lv.license) || null,
+      homepage: (lv && (lv.homepage || (lv.repository && lv.repository.url))) || null,
+      deps: lv && lv.dependencies ? Object.keys(lv.dependencies).slice(0, 20) : [],
+      published: latest && d.time ? d.time[latest] : null };
+  },
+  pypi: async (name) => {
+    const r = await http.get(`https://pypi.org/pypi/${encodeURIComponent(name)}/json`, { timeout: 12000 });
+    if (r.status === 404) return null;
+    if (r.status !== 200) throw new Error('PyPI error');
+    const i = (r.data && r.data.info) || {};
+    return { registry: 'pypi', name: i.name, description: (i.summary || '').slice(0, 300), latest: i.version || null,
+      license: i.license || null, homepage: i.home_page || null, author: i.author || null,
+      author_email: i.author_email || null, requires_python: i.requires_python || null, yanked: !!i.yanked };
+  },
+  crates: async (name) => {
+    const r = await http.get(`https://crates.io/api/v1/crates/${encodeURIComponent(name)}`, { headers: { 'User-Agent': 'Evosint/2.12 (pkg-recon)' }, timeout: 12000 });
+    if (r.status === 404) return null;
+    if (r.status !== 200) throw new Error('crates.io error');
+    const c = (r.data && r.data.crate) || {};
+    const v = (r.data && r.data.versions && r.data.versions[0]) || {};
+    return { registry: 'crates', name: c.name || c.id, description: (c.description || '').slice(0, 300),
+      latest: v.num || c.max_version || null, downloads: c.downloads ?? null,
+      documentation: c.documentation || null, homepage: c.homepage || null,
+      repository: c.repository || null, license: v.license || null };
+  },
+};
+router.get('/pkg/:registry/:name', async (req, res) => {
+  const reg = String(req.params.registry || '').toLowerCase();
+  const name = String(req.params.name || '').trim();
+  if (!PKG[reg]) return fail(res, 400, 'Registry must be npm, pypi or crates');
+  if (!/^[@a-zA-Z0-9][a-zA-Z0-9._/-]{0,99}$/.test(name)) return fail(res, 400, 'Invalid package name');
+  try {
+    const { data, cached } = await getOrSet(`pkg:${reg}:${name.toLowerCase()}`, 3600, async () => {
+      const out = await PKG[reg](name);
+      if (!out) { const e = new Error('Package not found'); e.status = 404; throw e; }
+      return out;
+    });
+    return ok(res, data, { cached, source: reg });
+  } catch (e) { return fail(res, e.status || 502, e.message || 'Package lookup failed'); }
+});
+
+// GET /api/recon/certs?q= — certificate identity search via crt.sh (orgs, names)
+router.get('/certs', async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (!q || q.length > 120 || /[<>"']/.test(q)) return fail(res, 400, 'Query ?q= required (org or name, max 120 chars)');
+  try {
+    const { data, cached } = await getOrSet(`crtid:${q.toLowerCase()}`, 86400, async () => {
+      const r = await http.get(`https://crt.sh/?q=${encodeURIComponent(q)}&output=json`, { timeout: 25000 });
+      if (r.status !== 200 || !Array.isArray(r.data)) { const e = new Error('crt.sh unreachable'); e.status = 502; throw e; }
+      const seen = new Map();
+      for (const row of r.data.slice(0, 500)) {
+        const cn = String(row.common_name || '');
+        if (!cn || seen.has(cn)) continue;
+        seen.set(cn, { common_name: cn,
+          issuer: String(row.issuer_name || '').split(',').slice(0, 2).join(',').slice(0, 120),
+          not_before: row.not_before || null, not_after: row.not_after || null });
+        if (seen.size >= 30) break;
+      }
+      return [...seen.values()];
+    });
+    return ok(res, data, { cached, source: 'crt.sh', count: data.length });
+  } catch (e) { return fail(res, e.status || 502, e.message || 'Certificate search failed'); }
+});
+
 module.exports = router;
