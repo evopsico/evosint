@@ -35,6 +35,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const h = r.h;
   check('HSTS max-age>=1yr', /max-age=31536000/.test(h['strict-transport-security'] || ''), h['strict-transport-security']);
   check('CSP script-src self only', /script-src 'self'/.test(h['content-security-policy'] || ''));
+  check('CSP worker-src self+blob (map workers)', /worker-src 'self' blob:/.test(h['content-security-policy'] || ''));
+  check('CSP connect allows tile host', (h['content-security-policy'] || '').includes('https://tiles.openfreemap.org'));
   check('CSP frame-ancestors self', /frame-ancestors 'self'/.test(h['content-security-policy'] || ''));
   check('CSP object-src none', /object-src 'none'/.test(h['content-security-policy'] || ''));
   check('X-Frame-Options SAMEORIGIN', h['x-frame-options'] === 'SAMEORIGIN');

@@ -52,7 +52,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   });
   dom.window.fetch = (u, o) => globalThis.fetch(new URL(u, dom.window.location.href).toString(), o);
   dom.window.AbortController = AbortController; // native controller: undici rejects jsdom-realm signals
-  dom.window.eval(appJs + '\n;window.__T={openAuth,show,TOOLS,AUTH,S,apiGet,addEntity,buildReport,LM,lmDetect,lmMk,lmReset,renderLinkMap,GLOBE,globeDots,globeProject,globeInvert,globeTapPx};');
+  dom.window.eval(appJs + '\n;window.__T={openAuth,show,TOOLS,AUTH,S,apiGet,addEntity,buildReport,LM,lmDetect,lmMk,lmReset,renderLinkMap,GLOBE,globeDots,globeProject,globeInvert,globeTapPx,wGetMode,STREETS};');
   const T = () => dom.window.__T;
   const q = (s) => dom.window.document.querySelector(s);
   const qa = (s) => [...dom.window.document.querySelectorAll(s)];
@@ -113,7 +113,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     d2.window.AbortController = AbortController;
     if (seed && seed.tok) d2.window.localStorage.setItem('evosint-token', seed.tok);
     if (seed && seed.me) d2.window.localStorage.setItem('evosint-me', seed.me);
-    d2.window.eval(appJs + '\n;window.__T={openAuth,show,TOOLS,AUTH,S,apiGet,addEntity,buildReport,LM,lmDetect,lmMk,lmReset,renderLinkMap,GLOBE,globeDots,globeProject,globeInvert,globeTapPx};');
+    d2.window.eval(appJs + '\n;window.__T={openAuth,show,TOOLS,AUTH,S,apiGet,addEntity,buildReport,LM,lmDetect,lmMk,lmReset,renderLinkMap,GLOBE,globeDots,globeProject,globeInvert,globeTapPx,wGetMode,STREETS};');
     await sleep(2500);
     return { d2, errs };
   }
@@ -194,6 +194,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   let geoOk = false;
   for (let i = 0; i < 50 && !geoOk; i++) { await sleep(500); geoOk = qa('#w-geo [data-gi]').length > 0; }
   check('world geo resolves Berlin', geoOk && q('#w-geo').textContent.includes('Berlin'), (q('#w-geo') || {}).textContent.slice(0, 80));
+  check('streets toggle present', !!q('#w-mode-globe') && !!q('#w-mode-streets') && !!q('#w-map'));
+  check('headless defaults to dot globe (no WebGL)', T().wGetMode() === 'globe' && q('#w-globewrap').hidden === false && q('#w-streetswrap').hidden === true && typeof dom.window.maplibregl === 'undefined');
 
   console.log(failures === 0 ? '\nALL UI TESTS GREEN' : `\n${failures} FAILURES`);
   srv.kill();

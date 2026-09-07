@@ -30,7 +30,7 @@ let pass = 0, total = 0;
 function check(n, c, x) { total++; if (c) pass++; console.log((c ? 'PASS' : 'FAIL') + ' live ' + n + (x ? ' | ' + x : '')); }
 (async () => {
   let r = await req('GET', '/api/health');
-  check('health 2.15.0', r.s === 200 && r.j && r.j.version === '2.15.0');
+  check('health 2.16.0', r.s === 200 && r.j && r.j.version === '2.16.0');
   const un = 'livefull' + Date.now().toString(36);
   r = await req('POST', '/api/auth/signup', { username: un, password: 'LiveFull12!', repeat: 'LiveFull12!', dob: '1990-06-06' });
   const tok0 = r.j && r.j.data && r.j.data.token;

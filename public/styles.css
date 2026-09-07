@@ -383,6 +383,11 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .wglobe{display:flex;justify-content:center}
 #w-globe{width:min(100%,460px);aspect-ratio:1/1;height:auto;touch-action:none;cursor:grab;border-radius:12px}
 #w-globe:active{cursor:grabbing}
+#w-globewrap[hidden],#w-streetswrap[hidden]{display:none}
+.mini.wmode.on{border-color:#fff;color:#fff}
+#w-map{width:100%;height:min(68vw,440px);min-height:300px;border-radius:12px;background:#050505}
+#w-map .maplibregl-ctrl-attrib{font-size:10px}
+#w-map .maplibregl-ctrl-attrib a{color:#9aa0a6}
 @media(max-width:640px){
   #w-globe{width:min(100%,380px)}
 }

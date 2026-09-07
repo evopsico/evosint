@@ -1602,6 +1602,95 @@ function globeTapLL(lat, lon){
   if(pill) pill.textContent = `${GLOBE.marker.lat.toFixed(2)}, ${GLOBE.marker.lon.toFixed(2)} — probing…`;
   wPick(GLOBE.marker.lat, GLOBE.marker.lon);
 }
+/* ---- streets 3D (MapLibre GL, self-hosted vendor, lazy) ---- */
+// Real roads + 3D buildings via free OpenFreeMap tiles (no key). The vendor
+// bundle loads on first use only, so the console stays light otherwise.
+const STREETS = { mode: 'globe', loading: false, loaded: false, map: null, marker: null };
+function wGetMode(){
+  try{ const m = localStorage.getItem('evosint-worldmode'); if(m === 'globe' || m === 'streets') return m; }catch(e){}
+  return (typeof window.WebGLRenderingContext !== 'undefined') ? 'streets' : 'globe';
+}
+function wSetMode(m, silent){
+  try{ localStorage.setItem('evosint-worldmode', m); }catch(e){}
+  STREETS.mode = m;
+  const g = m === 'globe';
+  const mg = $('#w-mode-globe'), ms = $('#w-mode-streets');
+  if(mg) mg.classList.toggle('on', g);
+  if(ms) ms.classList.toggle('on', !g);
+  const gw = $('#w-globewrap'), sw = $('#w-streetswrap');
+  if(gw) gw.hidden = !g;
+  if(sw) sw.hidden = g;
+  if(g){ try{ globeEnsure(); }catch(e){} }
+  else{
+    try{ globeStop(); }catch(e){}
+    if(!STREETS.loaded && !STREETS.loading){
+      const mc = $('#w-map'); if(mc && !mc.firstChild) mc.innerHTML = '<div class="load"><div class="spin"></div>Loading street tiles…</div>';
+      loadStreets();
+    }
+    else if(STREETS.map){ try{ STREETS.map.resize(); }catch(e){} }
+  }
+  if(!silent && !g && !STREETS.loaded) toast('Loading street tiles…');
+}
+function loadStreets(){
+  STREETS.loading = true;
+  const css = document.createElement('link');
+  css.rel = 'stylesheet'; css.href = '/public/vendor/maplibre-gl.css';
+  document.head.appendChild(css);
+  let settled = false;
+  const done = ok => {
+    if(settled) return; settled = true;
+    STREETS.loading = false;
+    if(ok && typeof maplibregl !== 'undefined'){ STREETS.loaded = true; initStreets(); }
+    else { toast('Streets unavailable here — dot globe it is'); wSetMode('globe'); }
+  };
+  const s = document.createElement('script');
+  s.src = '/public/vendor/maplibre-gl.js';
+  s.onload = ()=>done(true);
+  s.onerror = ()=>done(false);
+  document.head.appendChild(s);
+  setTimeout(()=>done(typeof maplibregl !== 'undefined'), 20000);
+}
+function initStreets(){
+  if(STREETS.mode !== 'streets' || typeof maplibregl === 'undefined') return;
+  try{
+    const mc = document.getElementById('w-map'); if(mc) mc.innerHTML = '';
+    const coarse = window.matchMedia && window.matchMedia('(pointer:coarse)').matches;
+    const map = new maplibregl.Map({
+      container: 'w-map',
+      style: 'https://tiles.openfreemap.org/styles/dark',
+      center: [10, 25], zoom: 1.1, projection: 'globe',
+      attributionControl: { compact: true },
+      cooperativeGestures: !!coarse,
+      failIfMajorPerformanceCaveat: false,
+    });
+    STREETS.map = map;
+    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
+    let loaded = false;
+    map.on('load', ()=>{
+      loaded = true;
+      try{
+        const layers = map.getStyle().layers || [];
+        let labelId = null;
+        for(const l of layers){ if(l.type === 'symbol' && l.layout && l.layout['text-field']){ labelId = l.id; break; } }
+        map.addLayer({ id: 'bldg3d', source: 'openmaptiles', 'source-layer': 'building', type: 'fill-extrusion', minzoom: 14,
+          paint: { 'fill-extrusion-color': '#3a3f45', 'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 12], 'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0], 'fill-extrusion-opacity': 0.85 } }, labelId);
+      }catch(e){}
+      try{ map.resize(); }catch(e){}
+    });
+    map.on('click', e=>{ if(e && e.lngLat) wPick(e.lngLat.lat, e.lngLat.lng); });
+    setTimeout(()=>{ if(!loaded && STREETS.mode === 'streets'){ toast('Street tiles timed out — dot globe it is'); wSetMode('globe'); } }, 30000);
+  }catch(e){ toast('Streets unavailable here — dot globe it is'); wSetMode('globe'); }
+}
+function streetsSync(lat, lon){
+  const map = STREETS.map;
+  if(!map || STREETS.mode !== 'streets' || typeof maplibregl === 'undefined') return;
+  if(!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+  try{
+    if(STREETS.marker) STREETS.marker.remove();
+    STREETS.marker = new maplibregl.Marker({ color: '#ffffff' }).setLngLat([lon, lat]).addTo(map);
+    map.flyTo({ center: [lon, lat], zoom: Math.max(map.getZoom(), 5), duration: 1400 });
+  }catch(e){}
+}
 const WORLD = { clockT: null, autoT: null, off: 0 };
 const WPRESETS = ['Kyiv', 'Gaza', 'Khartoum', 'Berlin', 'Tokyo', 'New York'];
 const WXEMOJI = { 'Clear sky': '☀', 'Mainly clear': '🌤', 'Partly cloudy': '⛅', 'Overcast': '☁', 'Fog': '🌫', 'Icy fog': '🌫' };
@@ -1618,8 +1707,13 @@ function renderWorld(){
     pr.dataset.done = '1';
     pr.innerHTML = WPRESETS.map(p=>`<button class="mini" data-wp="${esc(p)}">${esc(p)}</button>`).join('');
     $$('#w-presets [data-wp]').forEach(b=>b.onclick=()=>{ $('#w-q').value = b.dataset.wp; wGeo(true); });
+    const mg = $('#w-mode-globe');
+    if(mg){
+      mg.onclick = ()=>wSetMode('globe');
+      $('#w-mode-streets').onclick = ()=>wSetMode('streets');
+    }
   }
-  globeEnsure();
+  wSetMode(wGetMode(), true);
 }
 function worldStop(){
   if(WORLD.clockT){ clearInterval(WORLD.clockT); WORLD.clockT = null; }
@@ -1692,6 +1786,7 @@ function renderPlaceBundle(x, sub, histLabel){
   wFeed(nw, x.news, oceanNote || 'No fresh zone news right now.');
   wFeed(cf, x.conflict, oceanNote || 'No conflict-keyword hits in the latest zone news.');
   $('#w-newssub').textContent = `freshest here · via ${((x.sources || {}).news || '?')}`;
+  try{ streetsSync(x.place.lat, x.place.lon); }catch(e){}
   pushHist(x.ocean ? 'World ocean' : 'World zone', histLabel, 'world', true);
 }
 function wFeed(el, items, empty){
@@ -1860,8 +1955,10 @@ function buildViews(){
     <p style="color:var(--faint);font-size:11.5px;margin-top:10px">Server-counted, uncheatable · max 10 awards a day · clicks are free, awards land instantly</p></div>
   <div id="kit-flash" class="kitflash" hidden>+20 SCANS</div>`) +
   v('world', `<div class="casehead"><span class="no">WORLD WATCH</span><span class="stamp">Live planet · Fictional</span></div>
-  <div class="card" style="margin-bottom:12px"><div class="chead"><div class="cico">🌍</div><div><h3>Globe</h3><p>Drag to spin · scroll / pinch to zoom · tap land to probe it</p></div><span class="pill" id="w-pick">tap the planet</span></div>
-    <div class="wglobe"><canvas id="w-globe" tabindex="0" role="img" aria-label="Interactive Earth globe. Drag to rotate, tap to probe a point, arrow keys rotate, Enter probes the center."></canvas></div></div>
+  <div class="card" style="margin-bottom:12px"><div class="chead"><div class="cico">🌍</div><div><h3>Globe</h3><p id="w-globesub">Dot globe: drag to spin · Streets 3D: real roads + buildings</p></div><span class="pill" id="w-pick">tap the planet</span></div>
+    <div class="brow" style="margin-bottom:8px"><button class="mini wmode on" id="w-mode-globe">◉ Globe</button><button class="mini wmode" id="w-mode-streets">Streets 3D</button></div>
+    <div class="wglobe" id="w-globewrap"><canvas id="w-globe" tabindex="0" role="img" aria-label="Interactive Earth globe. Drag to rotate, tap to probe a point, arrow keys rotate, Enter probes the center."></canvas></div>
+    <div id="w-streetswrap" hidden><div id="w-map" role="img" aria-label="Interactive street map. Tap to probe a point."></div><p class="wmeta" style="margin-top:6px">tap streets to probe · 3D buildings from zoom 14 · tiles © OpenMapTiles · data © OpenStreetMap contributors</p></div></div>
   <div class="card" style="margin-bottom:12px"><div class="chead"><div class="cico">🔍</div><div><h3>Zone</h3><p>…or type it: weather, local time, news and conflict wire for any place on Earth.</p></div></div>
     <div class="brow"><input id="w-q" placeholder="city or country…" style="flex:1;min-width:180px;padding:10px 14px;border-radius:10px;border:1px solid var(--border2);background:#000;color:var(--text);outline:none"><button class="btn" id="w-go" style="flex:none">Locate ▸</button></div>
     <div class="brow" id="w-presets" style="margin-top:8px"></div>

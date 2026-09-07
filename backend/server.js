@@ -38,7 +38,9 @@ app.use(helmet({
       fontSrc: ["'self'", 'https://cdn.jsdelivr.net', 'data:'],
       // Favicons, avatars, logos load cross-origin by design.
       imgSrc: ["'self'", 'https:', 'data:'],
-      connectSrc: ["'self'"],
+      connectSrc: ["'self'", 'https://tiles.openfreemap.org'],
+      // MapLibre GL parses vector tiles in Blob-URL workers (same-origin code).
+      workerSrc: ["'self'", 'blob:'],
       // Turnstile renders its checkbox in a same-vendor iframe.
       frameSrc: ['https://challenges.cloudflare.com'],
       objectSrc: ["'none'"],
@@ -166,7 +168,7 @@ app.get('/', (req, res) => {
 app.get(['/health', '/api/health'], (req, res) => {
   res.json({
     status: 'OK',
-    version: '2.15.0',
+    version: '2.16.0',
     uptime_seconds: Math.round(process.uptime()),
     timestamp: new Date().toISOString(),
   });

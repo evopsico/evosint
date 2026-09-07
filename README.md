@@ -1,4 +1,4 @@
-# Evosint v2.15 — "Ghost" Monochrome Console (fictional agency theme)
+# Evosint v2.16 — "Ghost" Monochrome Console (fictional agency theme)
 
 A pure black-and-white case-file interface — no gradients, no purple, no gold — **an obvious parody/training build, not affiliated with the CIA, FBI, or
 any government agency**. Under the theme: **~100 API endpoints + 177-engine sweep
@@ -83,7 +83,7 @@ URLs with the package version, so edits appear on plain reload — no hard refre
 | Investigate | Case-numbered link chart (click-to-copy, auto-link toggle), manual + one-click entities, JSON export, **case report builder (standalone HTML + Markdown)** |
 | Link Map | **Seed one username/email/domain → linked accounts fan right, click any box for the next hop** (social+GitHub fan-out, breach+avatar leads, subdomain drill-down, Send to Investigate) — mobile-compact metrics, zoom/fit/⌂, tap-to-trace path highlight, hop bands, scan counter |
 | Kitty | **Clicker arcade: 1,000 taps on the 🐈‍⬛ = +20 scans** (server-counted, batched, 10 awards/day, clicks are free) |
-| World | **Live planet: zone weather + ticking local clock, local news + conflict wire (Google News RSS, GDELT fallback), global attack telemetry (live Feodo C2s + fresh CISA KEV)** — **interactive dot-matrix globe**: drag to spin (touch + inertia), scroll/pinch zoom, tap any land for coords + full zone bundle in 1 scan, day/night shading, arrow-key support |
+| World | **Live planet: zone weather + ticking local clock, local news + conflict wire (Google News RSS, GDELT fallback), global attack telemetry (live Feodo C2s + fresh CISA KEV)** — **interactive dot-matrix globe** (drag/inertia, tap-to-pick, day-night shading) plus **Streets 3D**: self-hosted MapLibre GL + free OpenFreeMap dark tiles, globe projection, 3D buildings from zoom 14, tap-to-probe, choice remembered |
 | Breaches | **Breacher** (HIBP + XposedOrNot + HudsonRock stealers + LeakCheck + ProxyNova combos + EmailRep → Exposure Index + unified timeline), email check, password exposure, verifier, hash reputation |
 | People | Username sweep, social deep-check (incl. Bluesky), GitHub, StackExchange, Roblox, Chess.com, Lichess, Discord invites, Wikipedia, ORCID, Gravatar |
 | Network | IP, WHOIS/RDAP, DNS×10, TLS, subdomains, headers, stack detect, URL expander, blacklist, portscan, ASN/prefix/IP (RIPEstat), PTR, Wayback, urlscan, page meta |
