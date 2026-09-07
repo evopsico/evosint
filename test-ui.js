@@ -52,7 +52,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   });
   dom.window.fetch = (u, o) => globalThis.fetch(new URL(u, dom.window.location.href).toString(), o);
   dom.window.AbortController = AbortController; // native controller: undici rejects jsdom-realm signals
-  dom.window.eval(appJs + '\n;window.__T={openAuth,show,TOOLS,AUTH,S,apiGet,addEntity,buildReport};');
+  dom.window.eval(appJs + '\n;window.__T={openAuth,show,TOOLS,AUTH,S,apiGet,addEntity,buildReport,LM,lmDetect,lmMk,lmReset,renderLinkMap};');
   const T = () => dom.window.__T;
   const q = (s) => dom.window.document.querySelector(s);
   const qa = (s) => [...dom.window.document.querySelectorAll(s)];
@@ -60,7 +60,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   check('no uncaught JS errors', errors.length === 0, errors.slice(0, 2).join(' ;; ').slice(0, 300));
   check('nav rendered (15+ buttons)', qa('#nav button').length >= 15, qa('#nav button').length + ' buttons');
-  check('15 views mounted', qa('.view').length === 15, qa('.view').length + ' views');
+  check('16 views mounted', qa('.view').length === 16, qa('.view').length + ' views');
   check('tool cards mounted (60+)', qa('.card[data-card]').length >= 60, qa('.card[data-card]').length + ' cards');
   check('account chip injected', !!q('#acctChip'), (q('#acctChip') || { textContent: 'MISSING' }).textContent.trim());
   check('auth modal injected', !!q('#authBack'));
@@ -113,7 +113,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     d2.window.AbortController = AbortController;
     if (seed && seed.tok) d2.window.localStorage.setItem('evosint-token', seed.tok);
     if (seed && seed.me) d2.window.localStorage.setItem('evosint-me', seed.me);
-    d2.window.eval(appJs + '\n;window.__T={openAuth,show,TOOLS,AUTH,S,apiGet,addEntity,buildReport};');
+    d2.window.eval(appJs + '\n;window.__T={openAuth,show,TOOLS,AUTH,S,apiGet,addEntity,buildReport,LM,lmDetect,lmMk,lmReset,renderLinkMap};');
     await sleep(2500);
     return { d2, errs };
   }
@@ -151,6 +151,20 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('report builds from ticked entities', repHtml.includes('UITEST Case File') && repMd.includes('report-victim@example.com') && repMd.includes('| email |') && repMd.includes('| domain |'));
   check('new tool cards mounted', ['ghorg','pkg','certs','greynoise'].every(id=>!!q(`[data-card="${id}"]`)));
   check('turnstile slots present', !!q('#cf-login') && !!q('#cf-signup'));
+  // 7) link map: view mounts, seed detect is pure, synthetic tree lays out with edges
+  T().show('linkmap'); await sleep(300);
+  check('link map view mounted', q('#v-linkmap').classList.contains('on') && !!q('#lm-go') && !!q('#lm-seed') && !!q('#lm-tograph'));
+  check('seed detect (email/domain/user)', T().lmDetect('a@b.com') === 'email' && T().lmDetect('example.com') === 'domain' && T().lmDetect('@octocat') === 'username' && T().lmDetect('octocat') === 'username');
+  T().lmReset();
+  const lmRoot = T().lmMk('username', 'octocat', 'USER · hop 0', '', 0, '');
+  T().LM.root = lmRoot;
+  T().lmMk('profile', 'GitHub', 'github.com/octocat', 'https://github.com/octocat', 1, lmRoot);
+  T().lmMk('email', 'o@x.com', 'commit email', '', 1, lmRoot);
+  T().LM.nodes[lmRoot].st = 'open';
+  T().renderLinkMap(); await sleep(300);
+  check('tree renders nodes + elbow edges', qa('#lmtree .lmnode').length === 3 && qa('#lmtree svg path').length === 2, qa('#lmtree .lmnode').length + ' nodes, ' + qa('#lmtree svg path').length + ' edges');
+  check('root styled, expand affordance shown', !!q('#lmtree .lmnode.root') && q('#lmtree').textContent.includes('+ expand'));
+  T().lmReset(); T().renderLinkMap(); await sleep(200);
 
   console.log(failures === 0 ? '\nALL UI TESTS GREEN' : `\n${failures} FAILURES`);
   srv.kill();

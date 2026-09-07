@@ -1,4 +1,4 @@
-# Evosint v2.12 — "Ghost" Monochrome Console (fictional agency theme)
+# Evosint v2.13 — "Ghost" Monochrome Console (fictional agency theme)
 
 A pure black-and-white case-file interface — no gradients, no purple, no gold — **an obvious parody/training build, not affiliated with the CIA, FBI, or
 any government agency**. Under the theme: **~100 API endpoints + 177-engine sweep
@@ -81,6 +81,7 @@ URLs with the package version, so edits appear on plain reload — no hard refre
 | Search | DataVoid-style tabs (Email/Username/Phone/Domain/IP) + Query + Run search; Email tab runs the full Breacher |
 | Modules | **177 site engines** with favicons, label filters, Grid/List views, ★ pins, sweep, Export to graph |
 | Investigate | Case-numbered link chart (click-to-copy, auto-link toggle), manual + one-click entities, JSON export, **case report builder (standalone HTML + Markdown)** |
+| Link Map | **Seed one username/email/domain → linked accounts fan right, click any box for the next hop** (social+GitHub fan-out, breach+avatar leads, subdomain drill-down, Send to Investigate) |
 | Breaches | **Breacher** (HIBP + XposedOrNot + HudsonRock stealers + LeakCheck + ProxyNova combos + EmailRep → Exposure Index + unified timeline), email check, password exposure, verifier, hash reputation |
 | People | Username sweep, social deep-check (incl. Bluesky), GitHub, StackExchange, Roblox, Chess.com, Lichess, Discord invites, Wikipedia, ORCID, Gravatar |
 | Network | IP, WHOIS/RDAP, DNS×10, TLS, subdomains, headers, stack detect, URL expander, blacklist, portscan, ASN/prefix/IP (RIPEstat), PTR, Wayback, urlscan, page meta |

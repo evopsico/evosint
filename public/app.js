@@ -384,7 +384,7 @@ function injectAuth(){
 /* ---------- nav / views ---------- */
 const NAV = [
   ['sec','Console'],
-  ['dash','◈','Dashboard'], ['search','◎','Search'], ['modules','▦','Modules',''], ['graph','⬡','Investigate',''],
+  ['dash','◈','Dashboard'], ['search','◎','Search'], ['modules','▦','Modules',''], ['graph','⬡','Investigate',''], ['linkmap','🕸','Link Map'],
   ['sec','Intel'],
   ['breach','✉','Breaches'], ['people','👤','People'], ['net','🌐','Network'], ['threat','☢','Threat Intel'],
   ['oath','🔑','OathNet'],
@@ -395,7 +395,7 @@ const NAV = [
   ['lab','🧪','Forensics & Utils'], ['api','⎔','API Docs'],
 ];
 let current = 'dash';
-const VIEW_TITLES = { dash:['Dashboard','Ops overview & exposure meter'], search:['Search','Supernova-style multi-engine battery'], modules:['Modules','Site-engine grid — username presence at scale'], graph:['Investigate','Entity relationship graph'], breach:['Breaches','Breach & credential exposure'], people:['People','Usernames, gamers, devs, profiles'], net:['Network','Infrastructure & web intel'], threat:['Threat Intel','Malware, vulns, reputation feeds'], oath:['OathNet','OAuth · OIDC · SAML · secret scan'], geo:['Geo','Places, coordinates, postal areas'], crypto:['Crypto','Addresses, markets, fees'], company:['Company','Corporate resolution'], recon:['Field Recon','Crawler · brute-force · takeover · audits'], lab:['Forensics & Utils','Parsers, validators, generators'], api:['API Docs','Every endpoint, live'] };
+const VIEW_TITLES = { dash:['Dashboard','Ops overview & exposure meter'], search:['Search','Supernova-style multi-engine battery'], modules:['Modules','Site-engine grid — username presence at scale'], graph:['Investigate','Entity relationship graph'], linkmap:['Link Map','One identity → linked accounts, hop by hop'], breach:['Breaches','Breach & credential exposure'], people:['People','Usernames, gamers, devs, profiles'], net:['Network','Infrastructure & web intel'], threat:['Threat Intel','Malware, vulns, reputation feeds'], oath:['OathNet','OAuth · OIDC · SAML · secret scan'], geo:['Geo','Places, coordinates, postal areas'], crypto:['Crypto','Addresses, markets, fees'], company:['Company','Corporate resolution'], recon:['Field Recon','Crawler · brute-force · takeover · audits'], lab:['Forensics & Utils','Parsers, validators, generators'], api:['API Docs','Every endpoint, live'] };
 
 function renderNav(){
   $('#nav').innerHTML = NAV.map(n => n[0]==='sec' ? `<div class="nav-sec">${esc(n[1])}</div>`
@@ -412,6 +412,7 @@ function show(v){
   const sb = document.getElementById('sideback'); if(sb) sb.classList.remove('open');
   $$('#tabbar button').forEach(b=>b.classList.toggle('on', b.dataset.v===v));
   if(v==='graph') renderGraph();
+  if(v==='linkmap') renderLinkMap();
   if(v==='dash') renderDash();
 }
 
@@ -1063,6 +1064,205 @@ function findLinks(n){
 }
 function iconFor(t){ return {email:'E',domain:'D',ip:'I',username:'U',hash:'H',wallet:'W',company:'C',phone:'P',asn:'A',geo:'G',ioc:'X',profile:'L',url:'L',note:'N'}[t]||'•'; }
 
+/* ================= LINK MAP (identity tree) ================= */
+// Left-to-right link tree: one seed user on the left, linked accounts fan right,
+// each box expandable into the next hop. Hops reuse the card endpoints, so quota
+// cost == running those cards by hand. XSS-safe: every dynamic string via esc().
+const LM = { seq: 0, root: null, nodes: {}, MAXKIDS: 12, MAXDEPTH: 3 };
+function lmDetect(seed){
+  seed = String(seed || '').trim().replace(/^@/, '');
+  if(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(seed)) return 'email';
+  if(/^(?!-)[a-z0-9-]{1,63}(?<!-)(\.[a-z0-9-]{1,63})*\.[a-z]{2,}$/i.test(seed) && seed.length <= 253) return 'domain';
+  return 'username';
+}
+function lmKindLabel(k){ return { seed: 'SEED', username: 'USER', email: 'EMAIL', domain: 'DOMAIN', profile: 'ACCOUNT', detail: 'LEAD' }[k] || 'NODE'; }
+function lmMk(kind, label, sub, url, depth, parent){
+  const id = 'lm' + (++LM.seq);
+  LM.nodes[id] = { id, kind, label: String(label || '').slice(0, 120), sub: String(sub || '').slice(0, 140), url: url || '', depth, parent: parent || '', kids: [], st: 'can', err: '' };
+  if(parent && LM.nodes[parent]) LM.nodes[parent].kids.push(id);
+  return id;
+}
+function lmReset(){ LM.seq = 0; LM.root = null; LM.nodes = {}; }
+function lmCan(n){
+  if(!n || n.depth >= LM.MAXDEPTH) return false;
+  if(n.kind === 'username' || n.kind === 'email' || n.kind === 'domain') return true;
+  if(n.kind === 'profile') return !!lmGhHandle(n.url);
+  return false;
+}
+function lmGhHandle(url){
+  const m = String(url || '').match(/^https?:\/\/(www\.)?github\.com\/([^/?#]+)/i);
+  return m ? m[2] : '';
+}
+function lmSeed(seed){
+  seed = String(seed || '').trim(); if(!seed){ toast('Enter a username, email, or domain'); return; }
+  lmReset();
+  const clean = seed.replace(/^@/, ''), kind = lmDetect(clean);
+  LM.root = lmMk(kind, clean, lmKindLabel(kind) + ' · hop 0', '', 0, '');
+  pushHist('Link map', clean, 'linkmap', null);
+  renderLinkMap();
+  lmExpand(LM.root);
+}
+function lmGhKids(p, out, seen){
+  const em = String((p && p.email) || '').trim();
+  if(em && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em) && !seen.has('e:' + em)){ seen.add('e:' + em); out.push({ kind: 'email', label: em, sub: 'public commit email — expandable', url: '' }); }
+  const blog = String((p && p.blog) || '').trim();
+  if(blog){
+    const d = blog.replace(/^https?:\/\//i, '').split('/')[0].toLowerCase();
+    if(/^(?!-)[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/.test(d) && !seen.has('d:' + d)){ seen.add('d:' + d); out.push({ kind: 'domain', label: d, sub: 'linked blog — expandable', url: '' }); }
+  }
+  ['company', 'location'].forEach(k=>{
+    const v = String((p && p[k]) || '').trim().slice(0, 60);
+    if(v && !seen.has('x:' + v)){ seen.add('x:' + v); out.push({ kind: 'detail', label: v, sub: k, url: '' }); }
+  });
+  const tw = String((p && p.twitter_username) || '').trim();
+  if(tw && !seen.has('t:' + tw)){ seen.add('t:' + tw); out.push({ kind: 'profile', label: '@' + tw + ' on X', sub: 'linked handle', url: 'https://x.com/' + tw }); }
+}
+async function lmFetchKids(n){
+  const seen = new Set();
+  if(n.kind === 'username'){
+    const [soc, gh] = await Promise.all([
+      apiGet('/social/' + encodeURIComponent(n.label)).catch(e => ({ error: String((e && e.message) || e) })),
+      apiGet('/github/' + encodeURIComponent(n.label)).catch(e => ({ error: String((e && e.message) || e) })),
+    ]);
+    const out = [];
+    ((soc && soc.data) || []).filter(r => r && r.found).forEach(r=>{
+      const key = 'u:' + (r.url || r.name);
+      if(seen.has(key)) return; seen.add(key);
+      out.push({ kind: 'profile', label: String(r.name || 'profile'), sub: String(r.url || '').replace(/^https?:\/\/(www\.)?/, '').slice(0, 60), url: r.url || '' });
+    });
+    if(gh && gh.data && gh.data.profile) lmGhKids(gh.data.profile, out, seen);
+    if(!out.length) throw new Error((soc && soc.error) || (gh && gh.error) || 'no linked accounts found');
+    return out;
+  }
+  if(n.kind === 'profile'){
+    const h = lmGhHandle(n.url); if(!h) return [];
+    const d = await apiGet('/github/' + encodeURIComponent(h));
+    const p = d.data && d.data.profile; if(!p) throw new Error('profile gone');
+    const out = []; lmGhKids(p, out, seen); return out;
+  }
+  if(n.kind === 'email'){
+    const [em, gr] = await Promise.all([
+      apiGet('/email/' + encodeURIComponent(n.label)).catch(e => ({ error: String((e && e.message) || e) })),
+      apiGet('/people/gravatar?email=' + encodeURIComponent(n.label)).catch(e => ({ error: String((e && e.message) || e) })),
+    ]);
+    const out = [];
+    (((em && em.data) || {}).breaches || []).forEach(b=>{
+      const nm = 'Breach: ' + (b.Name || b.name || b.breach || '?');
+      if(seen.has(nm)) return; seen.add(nm);
+      out.push({ kind: 'detail', label: nm, sub: String(b.Domain || b.domain || ((em.data || {}).source) || 'breach'), url: '' });
+    });
+    const g = (gr && gr.data) || {};
+    if(g.has_profile) out.push({ kind: 'profile', label: 'Gravatar: ' + (g.username || g.name || n.label), sub: 'public gravatar profile', url: g.profile || g.avatar || '' });
+    else out.push({ kind: 'detail', label: 'Gravatar: none public', sub: 'hash ' + String(g.hash || '').slice(0, 12), url: '' });
+    if(em && em.data && em.data.breached === false && !out.some(k => /^Breach:/.test(k.label))) out.unshift({ kind: 'detail', label: 'No breaches found', sub: String(em.data.source || 'clean'), url: '' });
+    return out;
+  }
+  if(n.kind === 'domain'){
+    const d = await apiGet('/network/subdomains/' + encodeURIComponent(n.label), 60000);
+    const subs = [...new Set((((d.data || {}).subdomains) || []).map(s => String(s).replace(/^\*\./, '').toLowerCase()))]
+      .filter(s => s && s !== n.label.toLowerCase()).sort().slice(0, 60);
+    return subs.map(s => ({ kind: 'domain', label: s, sub: 'subdomain — expandable', url: '' }));
+  }
+  return [];
+}
+async function lmExpand(id){
+  const n = LM.nodes[id]; if(!n || n.st === 'loading' || n.st === 'open') return;
+  if(!lmCan(n)){ // leaf: open the link, else copy the value
+    const h = n.url ? safeHref(n.url) : null;
+    if(h) window.open(h, '_blank', 'noopener');
+    else copyT(n.url || n.label);
+    return;
+  }
+  n.st = 'loading'; n.err = ''; renderLinkMap();
+  try{
+    const kids = await lmFetchKids(n);
+    if(!kids.length){ n.st = 'leaf'; n.sub = (n.sub ? n.sub + ' · ' : '') + 'no further links'; }
+    else{
+      kids.slice(0, LM.MAXKIDS).forEach(k=>{
+        const cid = lmMk(k.kind, k.label, k.sub, k.url, n.depth + 1, n.id);
+        if(!lmCan(LM.nodes[cid])) LM.nodes[cid].st = 'leaf';
+      });
+      if(kids.length > LM.MAXKIDS){ const oid = lmMk('detail', '+' + (kids.length - LM.MAXKIDS) + ' more — refine the seed', '', '', n.depth + 1, n.id); LM.nodes[oid].st = 'leaf'; }
+      n.st = 'open';
+    }
+  }catch(e){ n.st = 'err'; n.err = String((e && e.message) || 'upstream failed').slice(0, 90); toast('Expand failed: ' + n.err); }
+  renderLinkMap();
+}
+function lmCollapse(id){
+  const n = LM.nodes[id]; if(!n) return;
+  const drop = x => { x.kids.forEach(k => { if(LM.nodes[k]) drop(LM.nodes[k]); delete LM.nodes[k]; }); };
+  drop(n); n.kids = []; n.st = 'can'; renderLinkMap();
+}
+function lmToggle(id){
+  const n = LM.nodes[id]; if(!n || n.st === 'loading') return;
+  if(n.st === 'open') lmCollapse(id);
+  else if(n.st === 'can' || n.st === 'err'){ if(n.st === 'err') n.st = 'can'; lmExpand(id); }
+  else lmExpand(id); // leaf → open/copy path
+}
+function lmLayout(){
+  const root = LM.nodes[LM.root]; if(!root) return null;
+  const W = 212, BH = 58, CGAP = 88, RH = 66, PAD = 22;
+  let rows = 0, maxD = 0;
+  const walk = n => {
+    if(n.depth > maxD) maxD = n.depth;
+    const kids = n.st === 'open' ? n.kids.map(k => LM.nodes[k]).filter(Boolean) : [];
+    kids.forEach(walk);
+    if(!kids.length) n._r = rows++;
+    else n._r = (kids[0]._r + kids[kids.length - 1]._r) / 2;
+    n._x = PAD + n.depth * (W + CGAP);
+    n._y = PAD + n._r * RH;
+  };
+  walk(root);
+  return { W, BH, width: PAD * 2 + maxD * (W + CGAP) + W, height: PAD * 2 + Math.max(rows, 1) * RH };
+}
+function lmEdges(W){
+  let s = '';
+  Object.values(LM.nodes).forEach(n=>{
+    if(n.st !== 'open') return;
+    const x1 = n._x + W, y1 = n._y + 29;
+    n.kids.map(k => LM.nodes[k]).filter(Boolean).forEach(k=>{
+      const x2 = k._x, y2 = k._y + 29, mx = (x1 + x2) / 2;
+      s += `<path d="M ${x1} ${y1} H ${mx} V ${y2} H ${x2}" fill="none" stroke="#3d3d3d" stroke-width="1.5"/>`;
+    });
+  });
+  return s;
+}
+function lmNodeHTML(n, W){
+  const cls = 'lmnode' + (n.depth === 0 ? ' root' : '') + (n.st === 'loading' ? ' loading' : '') + (n.st === 'err' ? ' err' : '');
+  const act = n.st === 'loading' ? '<span class="lmspin"></span> expanding…'
+    : n.st === 'open' ? '− collapse'
+    : n.st === 'err' ? '↻ retry — ' + esc(n.err || 'failed')
+    : lmCan(n) ? '+ expand'
+    : n.url && safeHref(n.url) ? '⧉ open link'
+    : '⧉ copy';
+  return `<div class="${cls}" data-lm="${n.id}" style="left:${n._x}px;top:${n._y}px;width:${W}px" title="${esc(n.label)}">`
+    + `<div class="lmkind">${esc(lmKindLabel(n.kind))}${n.depth ? ' · hop ' + n.depth : ''}</div>`
+    + `<div class="lmlabel">${esc(n.label)}</div>`
+    + (n.sub ? `<div class="lmsub">${esc(n.sub)}</div>` : '')
+    + `<div class="lmact">${act}</div></div>`;
+}
+function renderLinkMap(){
+  const tree = $('#lmtree'); if(!tree) return;
+  if(!LM.root || !LM.nodes[LM.root]){
+    tree.innerHTML = '<p style="padding:34px;text-align:center;color:var(--faint)">Start from one <b>username</b>, <b>email</b>, or <b>domain</b> above.<br>Linked accounts fan out to the right — click any box to grow the next hop.</p>';
+    const c0 = $('#lmcount'); if(c0) c0.textContent = '';
+    return;
+  }
+  const L = lmLayout();
+  tree.innerHTML = `<div class="lminner" style="width:${L.width}px;height:${L.height}px"><svg class="lmedges" width="${L.width}" height="${L.height}">${lmEdges(L.W)}</svg>`
+    + Object.values(LM.nodes).map(n => lmNodeHTML(n, L.W)).join('') + '</div>';
+  $$('#lmtree [data-lm]').forEach(el => el.onclick = () => lmToggle(el.dataset.lm));
+  const c = $('#lmcount'); if(c) c.textContent = Object.keys(LM.nodes).length + ' nodes';
+}
+function lmToGraph(){
+  const all = Object.values(LM.nodes); if(!all.length) return toast('Map something first');
+  all.slice(0, 60).forEach(x=>{
+    const t = x.kind === 'email' ? 'email' : x.kind === 'domain' ? 'domain' : x.kind === 'username' ? 'username' : 'url';
+    addEntity(t, x.url || x.label, 'linkmap');
+  });
+  show('graph'); toast(Math.min(all.length, 60) + ' nodes → Investigate');
+}
+
 /* ================= DASH / HISTORY / API DOCS ================= */
 // Animated counters (skip animation for reduced-motion users).
 function countUp(el, to){
@@ -1192,6 +1392,10 @@ function buildViews(){
     <div class="field"><label>Analyst notes</label><textarea id="rep-notes" placeholder="What was found, confidence, next steps…"></textarea></div>
     <div class="brow"><button class="btn" id="rep-build">Build report ▸</button><button class="ghost" id="rep-dl" disabled>Download HTML</button><button class="ghost" id="rep-md" disabled>Copy Markdown</button></div>
     <div id="rep-out" style="margin-top:10px"></div></div>`) +
+  v('linkmap', `<div class="casehead"><span class="no">CASE FILE <b data-caseno></b></span><span class="stamp">Link map · Fictional</span></div>
+  <div class="card" style="margin-bottom:12px"><div class="chead"><div class="cico">🕸</div><div><h3>Link Map</h3><p>One user on the left, their accounts fanning right. Click any box to grow the next hop — each hop costs the same scans as running those cards.</p></div><span class="pill" id="lmcount"></span></div>
+    <div class="brow"><input id="lm-seed" placeholder="username, email, or domain…" style="flex:1;padding:10px 14px;border-radius:10px;border:1px solid var(--border2);background:#000;color:var(--text);font-family:var(--mono);outline:none"><button class="btn" id="lm-go" style="flex:none">Map it ▸</button><button class="ghost" id="lm-tograph">Send to Investigate</button><button class="ghost" id="lm-clear">Clear</button></div></div>
+    <div class="lmscroll"><div id="lmtree"><p style="padding:34px;text-align:center;color:var(--faint)">Start from one <b>username</b>, <b>email</b>, or <b>domain</b> above.</p></div></div>`) +
   v('breach', `<div class="grid" data-cards="breach"></div>`) +
   v('people', `<div class="grid" data-cards="people"></div>`) +
   v('net', `<div class="grid" data-cards="net"></div>`) +
@@ -1390,6 +1594,10 @@ $('#rep-dl').onclick = ()=>{
   dl(`${slug}.html`, window._lastReport.html, 'text/html');
 };
 $('#rep-md').onclick = ()=>{ if(!window._lastReport) return toast('Build the report first'); copyT(window._lastReport.md); };
+$('#lm-go').onclick = ()=>lmSeed($('#lm-seed').value);
+$('#lm-seed').addEventListener('keydown', e=>{ if(e.key==='Enter') lmSeed(e.target.value); });
+$('#lm-clear').onclick = ()=>{ lmReset(); renderLinkMap(); };
+$('#lm-tograph').onclick = lmToGraph;
 // ---- case report builder (ticked entities → standalone HTML + Markdown) ----
 function selectedEntities(){
   const boxes = $$('#entlist [data-rep]');
