@@ -624,12 +624,14 @@ router.get('/pkg/:registry/:name', async (req, res) => {
 });
 
 // GET /api/recon/certs?q= — certificate identity search via crt.sh (orgs, names)
+// Broad terms match tens of thousands of certs, so expired certs are excluded
+// server-side and short/empty queries are rejected up front.
 router.get('/certs', async (req, res) => {
   const q = String(req.query.q || '').trim();
-  if (!q || q.length > 120 || /[<>"']/.test(q)) return fail(res, 400, 'Query ?q= required (org or name, max 120 chars)');
+  if (!q || q.length < 3 || q.length > 120 || /[<>"']/.test(q)) return fail(res, 400, 'Query ?q= needs 3–120 chars (org or name — narrower is faster)');
   try {
     const { data, cached } = await getOrSet(`crtid:${q.toLowerCase()}`, 86400, async () => {
-      const r = await http.get(`https://crt.sh/?q=${encodeURIComponent(q)}&output=json`, { timeout: 25000 });
+      const r = await http.get(`https://crt.sh/?q=${encodeURIComponent(q)}&output=json&exclude=expired`, { timeout: 25000 });
       if (r.status !== 200 || !Array.isArray(r.data)) { const e = new Error('crt.sh unreachable'); e.status = 502; throw e; }
       const seen = new Map();
       for (const row of r.data.slice(0, 500)) {
@@ -643,7 +645,10 @@ router.get('/certs', async (req, res) => {
       return [...seen.values()];
     });
     return ok(res, data, { cached, source: 'crt.sh', count: data.length });
-  } catch (e) { return fail(res, e.status || 502, e.message || 'Certificate search failed'); }
+  } catch (e) {
+    if (e.code === 'ECONNABORTED' || /timeout/i.test(e.message || '')) return fail(res, 504, 'crt.sh timed out — try a narrower, more specific query');
+    return fail(res, e.status || 502, e.message || 'Certificate search failed');
+  }
 });
 
 module.exports = router;
