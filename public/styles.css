@@ -379,6 +379,13 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .wbar{flex:1;height:8px;background:#141619;border:1px solid var(--border);border-radius:5px;overflow:hidden}
 .wbar i{display:block;height:100%;background:#fafafa}
 .wrow b{width:36px;text-align:right;font-family:var(--mono);font-weight:400}
+/* ---------- world globe ---------- */
+.wglobe{display:flex;justify-content:center}
+#w-globe{width:min(100%,460px);aspect-ratio:1/1;height:auto;touch-action:none;cursor:grab;border-radius:12px}
+#w-globe:active{cursor:grabbing}
+@media(max-width:640px){
+  #w-globe{width:min(100%,380px)}
+}
 @media(max-width:640px){
   .lmscroll{max-height:72vh}
   #lm-go{flex:1}

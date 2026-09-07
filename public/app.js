@@ -1364,7 +1364,244 @@ function kitAward(added){
   toast('+' + added + ' scans — kitty provides');
 }
 
-/* ================= WORLD WATCH ================= */
+/* ================= WORLD GLOBE ================= */
+// Dot-matrix Earth: land cells baked from low-res world GeoJSON (1.5° grid,
+// base64 bitmask, row-major from 90N/180W). Zero deps, offline, monochrome.
+const WORLD_LAND = { w: 240, h: 120, step: 1.5, b64: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB//8////44AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPx/n/////AAAA/AAYAAAAfAAAAAAAAAAAAAAAAEO3v4f////+AAAPgAAAAAAAAcAAAAAAAAAAAAAADAAAfgP////+AAAHAAAAAAAAAMAAAAAAAAAAAAAAA9jjCAAP///+AAAAAAAAHgAAP/8AAPAAAAAAAAAAcAAAAAAD///8AAAAAAAAYAAD//gAAAAAAAAAAAAAe6zs/AAB///4AAAAAAABgDA/////wGAAAAwAEAAAI/wM//AAf//4AAAAAAABwHf/////z/+AABAB//wPI/+sEP4A///wAAAAf8AACHf////////8B8wH/////ww3mB4Af/8AAAAD//xjf7v///////////7A////////+B/g//gAAAAH//4///f///////////GH////////0P5Af4AH4AAPx+H///////////////AAf///////Ng+AP4ADAAA/n////////////////+AD///////8COMAHwAAAAD/P///////////////v8AD/7/////4APwABgAAAAH/P//////////////wfAAA+AH////4APzAAAAAAAD/D/////////////JhgAAAFAAf///8AH/gAAAAAIAOj////////////4AHAAAAQAAP////wH/gAAAAAMBuP////////////wAPgAACAAAH////+f/8AAAAAWAhf////////////AAPAAAAAAAT////+f/+AAAAA3H//////////////+AOAAAAAAAB/////f/8AAAAAHn//////////////+AIAAAAAAAB//////8wAAAAAMf//////////////9AAAAAAAAAA//////2HAAAAAF///////////////4AAAAAAAAAAf/////+AgAAAAD///////////////4AAAAAAAAAAf//////wAAAAAB///yfx/////////wAAAAAAAAAAf/////yAAAAAAB/z/gPj/////////jAAAAAAAAAAf/////gAAAAAA/wY/gDx////////8HAAAAAAAAAAf/////AAAAAAA/gGfnn4////////wAAAAAAAAAAAf////+AAAAAAA/ACY//4///////1gGAAAAAAAAAAP////8AAAAAAA/ACM//4///////hwEAAAAAAAAAAH////4AAAAAAAOLgA//////////4wcAAAAAAAAAAH////4AAAAAAAN/gDC/////////wz8AAAAAAAAAAB////wAAAAAAAf/gAA/////////wDgAAAAAAAAAAA////AAAAAAAA//8YB/////////4EAAAAAAAAAAAAH///AAAAAAAA///f//////////4AAAAAAAAAAAAAX/5BAAAAAAAB//////z///////4AAAAAAAAAAAAAb/gBAAAAAAAH////8/5///////4AAAAAAAAAAAAAF/gBoAAAAAAP////+/4f//////wAAAAAAAAAAAAAE/gAAAAAAAAP////+f8wH/////gAAAAAAAAAAAAAAfgAAAAAAAAf/////P/4D/////IAAAAAAAAAAAAAAPgAQAAAAAAf/////v/8D/+f/4AAAAAAAAAAAAAAAPgwOAAAAAAf/////n/4Af8P+AAAAAAAAAAAAAAAAHxwAwAAAAAf/////n/wAfwH+wAAAAAAAAAAAAAAAB/gAAAAAAAf/////z/gAfgH+AMAAAAAAAAAAAAAAAT8AAAAAAAf/////z+AAfAF/AIAAAAAAAAAAAAAAAB+AAAAAAAf/////94AAOAB/gIAAAAAAAAAAAAAAAAMAAAAAAAf//////AAAOAA/gCAAAAAAAAAAAAAAAAEBQAAAAAP/////+MAAGAAHAFAAAAAAAAAAAAAAAACDfgAAAAH//////8AAGAACAAAAAAAAAAAAAAAAAABP/wAAAAH//////4AABABgADAAAAAAAAAAAAAAAAAP/4AAAAD//////4AABAAQABAAAAAAAAAAAAAAAAAP//gAAAA/H////wAAAACYBgAAAAAAAAAAAAAAAAAH//wAAAAAA////wAAAADYDAAAAAAAAAAAAAAAAAAP//wAAAAAA////gAAAABoPgAAAAAAAAAAAAAAAAAf//4AAAAAA///+AAAAAA4fuQAAAAAAAAAAAAAAAA///+AAAAAA///8AAAAAAYfASAAAAAAAAAAAAAAAA////AAAAAA///4AAAAAAcfYBYAAAAAAAAAAAAAAA////8AAAAAf//4AAAAAAOCEh/AAAAAAAAAAAAAAA/////AAAAAP//wAAAAAAGAAAPgAAAAAAAAAAAAAA/////gAAAAP//wAAAAAADIABPwIAAAAAAAAAAAAAf////gAAAAH//wAAAAAAAOAAPYCAAAAAAAAAAAAAP////AAAAAH//4AAAAAAAACAAMAAAAAAAAAAAAAAP///+AAAAAH//4AAAAAAAAAAAAAAAAAAAAAAAAAAH///+AAAAAH//4AAAAAAAAAHhAAAAAAAAAAAAAAAH///8AAAAAP//4IAAAAAAAAvjAAAAAAAAAAAAAAAD///8AAAAAP//4cAAAAAAAB/jgAAAAAAAAAAAAAAA///8AAAAAP//h4AAAAAAAD/7gAAAAAAAAAAAAAAAf//8AAAAAP//B4AAAAAAAH//wAAAAAAAAAAAAAAAf//4AAAAAH/+AwAAAAAAAf//4AQAAAAAAAAAAAAAf//4AAAAAH//BwAAAAAAB///8AIAAAAAAAAAAAAAf//gAAAAAD//BwAAAAAAD///+AAAAAAAAAAAAAAAf/8AAAAAAD/+BgAAAAAAD////AAAAAAAAAAAAAAAf/8AAAAAAD/8AAAAAAAAD////AAAAAAAAAAAAAAAf/8AAAAAAD/8AAAAAAAAD////AAAAAAAAAAAAAAA//4AAAAAAB/4AAAAAAAAB////AAAAAAAAAAAAAAA//wAAAAAAA/wAAAAAAAAB////AAAAAAAAAAAAAAA//gAAAAAAA/gAAAAAAAAB/h//AAAAAAAAAAAAAAA//AAAAAAAA+AAAAAAAAAB+Av+AAAAAAAAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAP8AAQAAAAAAAAAAAB/8AAAAAAAAAAAAAAAAAAAAAH8AAIAAAAAAAAAAAB/4AAAAAAAAAAAAAAAAAAAAADQAAOAAAAAAAAAAAB/gAAAAAAAAAAAAAAAAAAAAAAAAAMAAAAAAAAAAAB+AAAAAAAAAAAAAAAAAAAAAAAYAAIAAAAAAAAAAAB+AAAAAAAAAAAAAAAAAAAAAAAYAAwAAAAAAAAAAAD8AAAAAAAAAAAAAAAAAAAAAAAAADAAAAAAAAAAAAD4AAAAAAAAAAAAAAAAAAAAAAAAAHAAAAAAAAAAAAD8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGAAAAAAAAAAAADwAACAefH/gAAAAAAAAAAAAAAAAEAAAAAAAAAAAB//8B///////4AAAAAAAAAAAAAAA/AAAAAAAAAAH///8P////////8AAAAAAAAAAAAAB3gAAAAATf//////8//////////+AAAAAAAAAAAgAHgAAAAH////////////////////AAAAAAAB4B////gAAAAP///////////////////4AAAAD////////4AAAAD////////////////////gAAALP///////8AAAAD/////////////////////gAABj////////wAAHg//////////////////////4AAAAD///////8AQ/AB////////////////////+AAAAB//////////AGP//////////////////////AAAAA///////////////////////////////////8AAD//gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' };
+/* ---- interactive globe (canvas orthographic Earth, zero deps) ---- */
+const GLOBE = { on: false, raf: 0, cv: null, ctx: null, size: 0, R: 0,
+  rot: { lam: 0.6, phi: 0.35 }, vel: { lam: 0, phi: 0 }, zoom: 1,
+  dots: [], stride: 1, marker: null, idle: 0, last: 0, ema: 16,
+  pointers: new Map(), pinching: false, pinchD: 0, drag: false,
+  downXY: null, downT: 0, moved: false, lastXY: null, lastT: 0 };
+const GSHADES = [0.14, 0.24, 0.34, 0.44, 0.55, 0.66, 0.78, 0.9].map(a=>`rgba(235,235,235,${a})`);
+function globeDots(){
+  if(GLOBE.dots.length) return GLOBE.dots;
+  try{
+    const raw = atob(WORLD_LAND.b64), W = WORLD_LAND.w, H = WORLD_LAND.h, S = WORLD_LAND.step, out = [];
+    for(let r = 0; r < H; r++){
+      const la = (90 - (r + 0.5) * S) * Math.PI / 180, cl = Math.cos(la), sy = Math.sin(la);
+      for(let c = 0; c < W; c++){
+        const i = r * W + c;
+        if((raw.charCodeAt(i >> 3) >> (7 - (i & 7))) & 1){
+          const lo = (-180 + (c + 0.5) * S) * Math.PI / 180;
+          out.push({ x: cl * Math.sin(lo), y: sy, z: cl * Math.cos(lo) });
+        }
+      }
+    }
+    GLOBE.dots = out;
+  }catch(e){ GLOBE.dots = []; }
+  return GLOBE.dots;
+}
+function globeAngles(){
+  return { cl: Math.cos(GLOBE.rot.lam), sl: Math.sin(GLOBE.rot.lam), cp: Math.cos(GLOBE.rot.phi), sp: Math.sin(GLOBE.rot.phi) };
+}
+function globeProject(lat, lon, R){
+  const A = globeAngles();
+  const la = lat * Math.PI / 180, lo = lon * Math.PI / 180, cl0 = Math.cos(la);
+  const x = cl0 * Math.sin(lo), y = Math.sin(la), z = cl0 * Math.cos(lo);
+  const x1 = x * A.cl + z * A.sl, z1 = -x * A.sl + z * A.cl;
+  const y2 = y * A.cp - z1 * A.sp, z2 = y * A.sp + z1 * A.cp;
+  return { x: R + R * x1, y: R - R * y2, z: z2 };
+}
+function globeInvert(px, py, R){
+  const nx = (px - R) / R, ny = -(py - R) / R;
+  if(nx * nx + ny * ny > 1) return null;
+  const A = globeAngles(), nz = Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny));
+  const y1 = ny * A.cp + nz * A.sp, z1 = -ny * A.sp + nz * A.cp, x1 = nx;
+  const x = x1 * A.cl - z1 * A.sl, z = x1 * A.sl + z1 * A.cl;
+  return { lat: Math.asin(Math.max(-1, Math.min(1, y1))) * 180 / Math.PI, lon: Math.atan2(x, z) * 180 / Math.PI };
+}
+function sunVec(now){
+  const d = new Date(now);
+  const doy = Math.floor((d.getTime() - Date.UTC(d.getUTCFullYear(), 0, 0)) / 864e5);
+  const decl = -23.44 * Math.PI / 180 * Math.cos((2 * Math.PI * (doy + 10)) / 365);
+  const utcH = d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
+  const lo = (12 - utcH) * 15 * Math.PI / 180;
+  return { x: Math.cos(decl) * Math.sin(lo), y: Math.sin(decl), z: Math.cos(decl) * Math.cos(lo) };
+}
+function globeDraw(t){
+  const G = GLOBE, ctx = G.ctx; if(!ctx) return;
+  const cx = G.size / 2, cy = G.size / 2, R = G.R * G.zoom, A = globeAngles();
+  ctx.clearRect(0, 0, G.size, G.size);
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.fillStyle = '#050505'; ctx.fill();
+  const sun = sunVec(Date.now());
+  const dots = globeDots(), stride = G.ema > 26 ? 2 : 1;
+  for(let i = 0; i < dots.length; i += stride){
+    const d = dots[i];
+    const x1 = d.x * A.cl + d.z * A.sl, z1 = -d.x * A.sl + d.z * A.cl;
+    const y2 = d.y * A.cp - z1 * A.sp, z2 = d.y * A.sp + z1 * A.cp;
+    if(z2 <= 0.02) continue;
+    const day = x1 * sun.x + y2 * sun.y + z2 * sun.z;
+    const q = day <= 0 ? 0 : Math.min(7, (Math.min(1, day * 1.6) * 8) | 0);
+    const s = 0.8 + z2 * 1.2;
+    ctx.fillStyle = GSHADES[q];
+    ctx.fillRect(cx + R * x1 - s / 2, cy - R * y2 - s / 2, s, s);
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  for(let lo = -180; lo < 180; lo += 20){
+    let pen = false;
+    for(let la = -84; la <= 84; la += 6){
+      const p = globeProject(la, lo, R);
+      const x = cx - R + p.x, y = cy - R + p.y;
+      if(p.z > 0.03){ if(!pen){ ctx.moveTo(x, y); pen = true; } else ctx.lineTo(x, y); }
+      else pen = false;
+    }
+  }
+  for(let la = -60; la <= 80; la += 20){
+    let pen = false;
+    for(let lo = -180; lo < 180; lo += 6){
+      const p = globeProject(la, lo, R);
+      const x = cx - R + p.x, y = cy - R + p.y;
+      if(p.z > 0.03){ if(!pen){ ctx.moveTo(x, y); pen = true; } else ctx.lineTo(x, y); }
+      else pen = false;
+    }
+  }
+  ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.strokeStyle = '#2e3439'; ctx.lineWidth = 1.5; ctx.stroke();
+  if(G.marker){
+    const p = globeProject(G.marker.lat, G.marker.lon, R);
+    if(p.z > 0.08){
+      const mx = cx - R + p.x, my = cy - R + p.y;
+      const rm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const pr = rm ? 9 : 8 + 3 * Math.sin(t / 280);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(mx, my, pr, 0, 7); ctx.stroke();
+      ctx.beginPath(); ctx.arc(mx, my, 2, 0, 7); ctx.fillStyle = '#fff'; ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(mx - pr - 5, my); ctx.lineTo(mx - pr + 1, my); ctx.moveTo(mx + pr - 1, my); ctx.lineTo(mx + pr + 5, my);
+      ctx.moveTo(mx, my - pr - 5); ctx.lineTo(mx, my - pr + 1); ctx.moveTo(mx, my + pr - 1); ctx.lineTo(mx, my + pr + 5);
+      ctx.stroke();
+    }
+  }
+}
+function globeFrame(t){
+  if(!GLOBE.on) return;
+  GLOBE.raf = requestAnimationFrame(globeFrame);
+  const dt = Math.min(64, t - (GLOBE.last || t)); GLOBE.last = t;
+  GLOBE.ema = GLOBE.ema * 0.9 + dt * 0.1;
+  const rm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(!GLOBE.drag && !rm && (t - GLOBE.idle) > 3000) GLOBE.rot.lam += dt * 0.00005;
+  if(!GLOBE.drag && (Math.abs(GLOBE.vel.lam) > 1e-7 || Math.abs(GLOBE.vel.phi) > 1e-7)){
+    GLOBE.rot.lam += GLOBE.vel.lam * dt;
+    GLOBE.rot.phi = Math.max(-1.1, Math.min(1.1, GLOBE.rot.phi + GLOBE.vel.phi * dt));
+    if(rm){ GLOBE.vel.lam = 0; GLOBE.vel.phi = 0; }
+    else { GLOBE.vel.lam *= 0.94; GLOBE.vel.phi *= 0.94; }
+  }
+  globeDraw(t);
+}
+function globeSize(){
+  const G = GLOBE; if(!G.cv || !G.ctx) return;
+  const w = G.cv.clientWidth || 0; if(w <= 0) return;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  G.size = Math.round(w); G.R = w / 2 - 10;
+  G.cv.width = Math.round(w * dpr); G.cv.height = Math.round(w * dpr);
+  G.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+function globeEnsure(){
+  const cv = $('#w-globe'); if(!cv) return false;
+  if(GLOBE.on){ globeSize(); return true; }
+  if((cv.clientWidth || 0) <= 0) return false;
+  let ctx = null;
+  try{ ctx = cv.getContext('2d'); }catch(e){ ctx = null; }
+  if(!ctx){ const pill = $('#w-pick'); if(pill) pill.textContent = 'globe unsupported — use search below'; return false; }
+  GLOBE.cv = cv; GLOBE.ctx = ctx;
+  globeDots(); globeSize();
+  if(GLOBE.size <= 0) return false;
+  GLOBE.on = true; GLOBE.idle = performance.now(); GLOBE.last = 0;
+  globeBind();
+  GLOBE.raf = requestAnimationFrame(globeFrame);
+  return true;
+}
+function globeStop(){
+  GLOBE.on = false;
+  if(GLOBE.raf) cancelAnimationFrame(GLOBE.raf);
+  GLOBE.raf = 0; GLOBE.drag = false; GLOBE.pointers.clear(); GLOBE.pinching = false;
+}
+function globeBind(){
+  const cv = GLOBE.cv;
+  cv.style.touchAction = 'none';
+  const pos = e => {
+    const r = cv.getBoundingClientRect();
+    return [e.clientX - r.left, e.clientY - r.top];
+  };
+  cv.addEventListener('pointerdown', e=>{
+    try{ if(cv.setPointerCapture) cv.setPointerCapture(e.pointerId); }catch(err){}
+    GLOBE.pointers.set(e.pointerId, [e.clientX, e.clientY]);
+    GLOBE.idle = performance.now();
+    if(GLOBE.pointers.size === 1){
+      GLOBE.drag = true; GLOBE.moved = false;
+      GLOBE.downXY = [e.clientX, e.clientY]; GLOBE.lastXY = [e.clientX, e.clientY];
+      GLOBE.downT = performance.now(); GLOBE.lastT = GLOBE.downT;
+      GLOBE.vel.lam = 0; GLOBE.vel.phi = 0;
+    }else if(GLOBE.pointers.size === 2){
+      GLOBE.pinching = true;
+      const p = [...GLOBE.pointers.values()];
+      GLOBE.pinchD = Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]) || 1;
+    }
+  });
+  cv.addEventListener('pointermove', e=>{
+    if(!GLOBE.pointers.has(e.pointerId)) return;
+    GLOBE.pointers.set(e.pointerId, [e.clientX, e.clientY]);
+    GLOBE.idle = performance.now();
+    if(GLOBE.pinching && GLOBE.pointers.size >= 2){
+      const p = [...GLOBE.pointers.values()];
+      const d = Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]) || 1;
+      GLOBE.zoom = Math.max(0.7, Math.min(1.8, GLOBE.zoom * d / GLOBE.pinchD));
+      GLOBE.pinchD = d; GLOBE.moved = true;
+      return;
+    }
+    if(!GLOBE.drag || GLOBE.pointers.size !== 1) return;
+    const now = performance.now();
+    const dx = e.clientX - GLOBE.lastXY[0], dy = e.clientY - GLOBE.lastXY[1];
+    const dt = Math.max(1, now - GLOBE.lastT);
+    const R = (GLOBE.R * GLOBE.zoom) || 1;
+    GLOBE.rot.lam += dx / R;
+    GLOBE.rot.phi = Math.max(-1.1, Math.min(1.1, GLOBE.rot.phi + dy / R));
+    GLOBE.vel.lam = (dx / R) / dt; GLOBE.vel.phi = (dy / R) / dt;
+    GLOBE.lastXY = [e.clientX, e.clientY]; GLOBE.lastT = now;
+    if(Math.hypot(e.clientX - GLOBE.downXY[0], e.clientY - GLOBE.downXY[1]) > 6) GLOBE.moved = true;
+  });
+  const up = e=>{
+    GLOBE.pointers.delete(e.pointerId);
+    if(GLOBE.pointers.size < 2) GLOBE.pinching = false;
+    if(GLOBE.pointers.size > 0) return;
+    const dt = performance.now() - GLOBE.downT;
+    const wasTap = GLOBE.drag && !GLOBE.moved && dt < 500;
+    GLOBE.drag = false; GLOBE.idle = performance.now();
+    if(wasTap){ const pq = pos(e); globeTapPx(pq[0], pq[1]); }
+  };
+  cv.addEventListener('pointerup', up);
+  cv.addEventListener('pointercancel', up);
+  cv.addEventListener('wheel', e=>{
+    e.preventDefault();
+    GLOBE.zoom = Math.max(0.7, Math.min(1.8, GLOBE.zoom * (e.deltaY > 0 ? 0.92 : 1.09)));
+    GLOBE.idle = performance.now();
+  }, { passive: false });
+  cv.addEventListener('keydown', e=>{
+    const step = 0.12; let used = true;
+    if(e.key === 'ArrowLeft') GLOBE.rot.lam -= step;
+    else if(e.key === 'ArrowRight') GLOBE.rot.lam += step;
+    else if(e.key === 'ArrowUp') GLOBE.rot.phi = Math.max(-1.1, Math.min(1.1, GLOBE.rot.phi - step));
+    else if(e.key === 'ArrowDown') GLOBE.rot.phi = Math.max(-1.1, Math.min(1.1, GLOBE.rot.phi + step));
+    else if(e.key === 'Enter'){ const c = globeInvert(GLOBE.R * GLOBE.zoom, GLOBE.R * GLOBE.zoom); if(c) globeTapLL(c.lat, c.lon); }
+    else used = false;
+    if(used){ e.preventDefault(); GLOBE.idle = performance.now(); }
+  });
+}
+function globeTapPx(px, py){
+  const c = globeInvert(px, py, GLOBE.R * GLOBE.zoom);
+  if(!c){ toast('That is space — tap the disc'); return; }
+  globeTapLL(c.lat, c.lon);
+}
+function globeTapLL(lat, lon){
+  GLOBE.marker = { lat: Math.round(lat * 100) / 100, lon: Math.round(lon * 100) / 100 };
+  const pill = $('#w-pick');
+  if(pill) pill.textContent = `${GLOBE.marker.lat.toFixed(2)}, ${GLOBE.marker.lon.toFixed(2)} — probing…`;
+  wPick(GLOBE.marker.lat, GLOBE.marker.lon);
+}
 const WORLD = { clockT: null, autoT: null, off: 0 };
 const WPRESETS = ['Kyiv', 'Gaza', 'Khartoum', 'Berlin', 'Tokyo', 'New York'];
 const WXEMOJI = { 'Clear sky': '☀', 'Mainly clear': '🌤', 'Partly cloudy': '⛅', 'Overcast': '☁', 'Fog': '🌫', 'Icy fog': '🌫' };
@@ -1382,10 +1619,12 @@ function renderWorld(){
     pr.innerHTML = WPRESETS.map(p=>`<button class="mini" data-wp="${esc(p)}">${esc(p)}</button>`).join('');
     $$('#w-presets [data-wp]').forEach(b=>b.onclick=()=>{ $('#w-q').value = b.dataset.wp; wGeo(true); });
   }
+  globeEnsure();
 }
 function worldStop(){
   if(WORLD.clockT){ clearInterval(WORLD.clockT); WORLD.clockT = null; }
   if(WORLD.autoT){ clearInterval(WORLD.autoT); WORLD.autoT = null; const a = $('#w-auto'); if(a){ a.textContent = 'Auto: off'; a.classList.remove('on'); } }
+  try{ globeStop(); }catch(e){}
 }
 function wSpin(el, msg){ el.innerHTML = `<div class="load"><div class="spin"></div>${esc(msg)}</div>`; }
 async function wGeo(auto){
@@ -1407,30 +1646,53 @@ async function wPlace(g){
   ck.textContent = '--:--:--';
   try{
     const d = await apiGet(`/world/place?lat=${g.lat}&lon=${g.lon}&name=${encodeURIComponent(g.name)}&country=${encodeURIComponent(g.country || '')}`, 60000);
-    const x = d.data || {}, w = x.weather || {};
-    $('#w-wxsub').textContent = `${g.name}${g.country ? ', ' + g.country : ''} · ${esc(w.timezone || '')}`;
-    wx.innerHTML = w.temp === undefined ? '<p style="color:var(--faint)">Weather unavailable.</p>'
-      : `<div style="display:flex;align-items:center;gap:12px"><span style="font-size:40px">${wxEmoji(w.label || '')}</span><span class="wxbig">${esc(Math.round(w.temp))}°</span><b>${esc(w.label || '')}</b></div>`
-      + kv({ 'Feels like': esc(Math.round(w.feels ?? w.temp)) + '°', 'Wind': esc(w.wind ?? '—') + ' km/h', 'Humidity': esc(w.humidity ?? '—') + '%', 'Pressure': esc(w.pressure ?? '—') + ' hPa' })
-      + ((w.daily || []).length ? `<div class="sect">Next days</div><div class="wday">` + w.daily.map(t=>`<div><b>${esc(String(t.date || '').slice(5))}</b><br>${esc(wxEmoji(t.label || ''))} ${esc(t.label || '')}<br><span style="color:var(--muted)">${esc(t.tmax ?? '?')}° / ${esc(t.tmin ?? '?')}°${t.precip ? ' · ☂' + esc(t.precip) + '%' : ''}</span></div>`).join('') + '</div>' : '');
-    WORLD.off = w.utc_offset_seconds || 0;
-    $('#w-tzsub').textContent = (w.timezone || '—') + ' · UTC' + (WORLD.off >= 0 ? '+' : '−') + Math.abs(WORLD.off / 3600);
-    if(WORLD.clockT) clearInterval(WORLD.clockT);
-    const tick = ()=>{
-      const t = new Date(Date.now() + WORLD.off * 1000);
-      ck.textContent = t.toISOString().slice(11, 19);
-      const dt = $('#w-date'); if(dt) dt.textContent = t.toISOString().slice(0, 10);
-    };
-    tick(); WORLD.clockT = setInterval(tick, 1000);
-    wFeed(nw, x.news, 'No fresh zone news right now.');
-    wFeed(cf, x.conflict, 'No conflict-keyword hits in the latest zone news.');
-    $('#w-newssub').textContent = `freshest from ${g.name} · via ${esc((x.sources || {}).news || '?')}`;
-    pushHist('World zone', g.name, 'world', true);
+    renderPlaceBundle(d.data || {}, `${g.name}${g.country ? ', ' + g.country : ''}`, g.name);
+    GLOBE.marker = { lat: g.lat, lon: g.lon };
+    const pill = $('#w-pick'); if(pill) pill.textContent = `${g.name} · ${Number(g.lat).toFixed(2)}, ${Number(g.lon).toFixed(2)}`;
   }catch(e){
     wx.innerHTML = `<div class="load">❌ ${esc(e.message)}</div>`;
     nw.innerHTML = ''; cf.innerHTML = '';
     try{ pushHist('World zone', g.name, 'world', false); }catch{}
   }
+}
+async function wPick(lat, lon){
+  const wx = $('#w-wx'), ck = $('#w-clock'), nw = $('#w-news'), cf = $('#w-conf');
+  wSpin(wx, 'Probing coordinates…'); wSpin(nw, 'Scanning the wire…'); wSpin(cf, 'Scanning the wire…');
+  ck.textContent = '--:--:--';
+  try{
+    const d = await apiGet(`/world/pick?lat=${lat.toFixed(2)}&lon=${lon.toFixed(2)}`, 90000);
+    const x = d.data || {}, p = x.place || {};
+    renderPlaceBundle(x, `${p.name || 'picked point'} · ${Number(lat).toFixed(2)}, ${Number(lon).toFixed(2)}`, p.name || 'globe pick');
+    const pill = $('#w-pick'); if(pill) pill.textContent = `${p.name || ''} · ${Number(lat).toFixed(2)}, ${Number(lon).toFixed(2)}`;
+  }catch(e){
+    wx.innerHTML = `<div class="load">❌ ${esc(e.message)}</div>`;
+    nw.innerHTML = ''; cf.innerHTML = '';
+    const pill = $('#w-pick'); if(pill) pill.textContent = 'probe failed — try again';
+    try{ pushHist('World pick', `${lat.toFixed(2)},${lon.toFixed(2)}`, 'world', false); }catch{}
+  }
+}
+function renderPlaceBundle(x, sub, histLabel){
+  const w = x.weather || {};
+  const wx = $('#w-wx'), ck = $('#w-clock'), nw = $('#w-news'), cf = $('#w-conf');
+  $('#w-wxsub').textContent = `${sub} · ${w.timezone || ''}`;
+  wx.innerHTML = w.temp === undefined ? '<p style="color:var(--faint)">Weather unavailable.</p>'
+    : `<div style="display:flex;align-items:center;gap:12px"><span style="font-size:40px">${wxEmoji(w.label || '')}</span><span class="wxbig">${esc(Math.round(w.temp))}°</span><b>${esc(w.label || '')}</b></div>`
+    + kv({ 'Feels like': esc(Math.round(w.feels ?? w.temp)) + '°', 'Wind': esc(w.wind ?? '—') + ' km/h', 'Humidity': esc(w.humidity ?? '—') + '%', 'Pressure': esc(w.pressure ?? '—') + ' hPa' })
+    + ((w.daily || []).length ? `<div class="sect">Next days</div><div class="wday">` + w.daily.map(t=>`<div><b>${esc(String(t.date || '').slice(5))}</b><br>${esc(wxEmoji(t.label || ''))} ${esc(t.label || '')}<br><span style="color:var(--muted)">${esc(t.tmax ?? '?')}° / ${esc(t.tmin ?? '?')}°${t.precip ? ' · ☂' + esc(t.precip) + '%' : ''}</span></div>`).join('') + '</div>' : '');
+  WORLD.off = w.utc_offset_seconds || 0;
+  $('#w-tzsub').textContent = (w.timezone || '—') + ' · UTC' + (WORLD.off >= 0 ? '+' : '−') + Math.abs(WORLD.off / 3600);
+  if(WORLD.clockT) clearInterval(WORLD.clockT);
+  const tick = ()=>{
+    const t = new Date(Date.now() + WORLD.off * 1000);
+    ck.textContent = t.toISOString().slice(11, 19);
+    const dt = $('#w-date'); if(dt) dt.textContent = t.toISOString().slice(0, 10);
+  };
+  tick(); WORLD.clockT = setInterval(tick, 1000);
+  const oceanNote = x.ocean ? 'Open ocean — no local press.' : null;
+  wFeed(nw, x.news, oceanNote || 'No fresh zone news right now.');
+  wFeed(cf, x.conflict, oceanNote || 'No conflict-keyword hits in the latest zone news.');
+  $('#w-newssub').textContent = `freshest here · via ${((x.sources || {}).news || '?')}`;
+  pushHist(x.ocean ? 'World ocean' : 'World zone', histLabel, 'world', true);
 }
 function wFeed(el, items, empty){
   if(!items || !items.length){ el.innerHTML = `<p style="color:var(--faint)">${esc(empty)}</p>`; return; }
@@ -1518,6 +1780,7 @@ const API_DOCS = [
   ['GET','/api/company/:name','Wikidata + Wikipedia'],
   ['GET','/api/kitty/state','Clicker counter (free)'],['POST','/api/kitty/click','Batch clicks · 1,000 = +20 scans (free)'],
   ['GET','/api/world/geo?q=','Place search (Open-Meteo)'],['GET','/api/world/place?lat=&lon=&name=','Weather + clock + news + conflict wire'],['GET','/api/world/attacks','Live C2s + fresh KEV'],
+  ['GET','/api/world/reverse?lat=&lon=','Coords → place name'],['GET','/api/world/pick?lat=&lon=','Globe tap → full bundle, 1 scan'],
  ['POST','/api/recon/crawl','Same-origin crawler'],['POST','/api/recon/dns-brute','Built-in DNS brute-force'],['POST','/api/recon/subdomains','4-source sub aggregator'],['GET','/api/recon/wmn/:u','WhatsMyName 700 sweep'],
  ['POST','/api/recon/chase','Name→email chase'],['POST','/api/recon/wpcheck','WordPress audit'],['POST','/api/recon/takeover','Subdomain takeover'],['POST','/api/recon/goldmine','Wayback sensitive files'],
  ['GET','/api/recon/emailsec/:domain','SPF/DMARC/DKIM grade'],['POST','/api/recon/typosquat','Squat gen + DNS'],['GET','/api/recon/favicon-hash?url=','mmh3 Shodan pivot'],['GET','/api/recon/tor/:ip','Tor relay check'],['GET','/api/recon/pgp/:email','PGP keyservers'],  ['GET','/api/recon/github-code?q=','GH code (token)'],
@@ -1597,7 +1860,9 @@ function buildViews(){
     <p style="color:var(--faint);font-size:11.5px;margin-top:10px">Server-counted, uncheatable · max 10 awards a day · clicks are free, awards land instantly</p></div>
   <div id="kit-flash" class="kitflash" hidden>+20 SCANS</div>`) +
   v('world', `<div class="casehead"><span class="no">WORLD WATCH</span><span class="stamp">Live planet · Fictional</span></div>
-  <div class="card" style="margin-bottom:12px"><div class="chead"><div class="cico">🌍</div><div><h3>Zone</h3><p>Weather, local time, news and conflict wire for any place on Earth.</p></div></div>
+  <div class="card" style="margin-bottom:12px"><div class="chead"><div class="cico">🌍</div><div><h3>Globe</h3><p>Drag to spin · scroll / pinch to zoom · tap land to probe it</p></div><span class="pill" id="w-pick">tap the planet</span></div>
+    <div class="wglobe"><canvas id="w-globe" tabindex="0" role="img" aria-label="Interactive Earth globe. Drag to rotate, tap to probe a point, arrow keys rotate, Enter probes the center."></canvas></div></div>
+  <div class="card" style="margin-bottom:12px"><div class="chead"><div class="cico">🔍</div><div><h3>Zone</h3><p>…or type it: weather, local time, news and conflict wire for any place on Earth.</p></div></div>
     <div class="brow"><input id="w-q" placeholder="city or country…" style="flex:1;min-width:180px;padding:10px 14px;border-radius:10px;border:1px solid var(--border2);background:#000;color:var(--text);outline:none"><button class="btn" id="w-go" style="flex:none">Locate ▸</button></div>
     <div class="brow" id="w-presets" style="margin-top:8px"></div>
     <div id="w-geo" style="margin-top:8px"></div></div>
@@ -1826,7 +2091,7 @@ $('#w-auto').onclick = ()=>{
   a.textContent = 'Auto: on (1 scan/min)'; a.classList.add('on'); toast('Auto-refresh on — 1 scan/min');
 };
 let lmRzT = null;
-window.addEventListener('resize', ()=>{ clearTimeout(lmRzT); lmRzT = setTimeout(()=>{ const sc = $('#lmscroll'); if(!sc || !LM.root || !LM.nodes[LM.root]) return; const c = sc.clientWidth > 0 && sc.clientWidth < 640; if(c !== LM.compact){ LM.compact = c; renderLinkMap(); } }, 250); });
+window.addEventListener('resize', ()=>{ clearTimeout(lmRzT); lmRzT = setTimeout(()=>{ const sc = $('#lmscroll'); if(sc && LM.root && LM.nodes[LM.root]){ const c = sc.clientWidth > 0 && sc.clientWidth < 640; if(c !== LM.compact){ LM.compact = c; renderLinkMap(); } } try{ if(GLOBE.on) globeSize(); }catch(e){} }, 250); });
 // ---- case report builder (ticked entities → standalone HTML + Markdown) ----
 function selectedEntities(){
   const boxes = $$('#entlist [data-rep]');

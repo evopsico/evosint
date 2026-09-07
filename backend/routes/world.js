@@ -79,6 +79,71 @@ router.get('/geo', ah(async (req, res) => {
   } catch (e) { return fail(res, e.status || 502, e.message || 'Geocoding failed'); }
 }));
 
+// GET /api/world/reverse?lat=&lon= — coords → place name (BigDataCloud, no key)
+router.get('/reverse', ah(async (req, res) => {
+  const lat = Number(req.query.lat), lon = Number(req.query.lon);
+  if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lon) || lon < -180 || lon > 180) return fail(res, 400, 'Valid ?lat= (-90..90) and ?lon= (-180..180) required');
+  try {
+    const { data, cached } = await getOrSet(`world:rev:${lat.toFixed(2)}:${lon.toFixed(2)}`, 2592000, async () => {
+      const r = await http.get(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`, { timeout: 12000 });
+      if (r.status !== 200 || typeof r.data !== 'object') throw Object.assign(new Error('Reverse-geocode unreachable'), { status: 502 });
+      const d = r.data || {};
+      const name = oneLine(d.city || d.locality || '', 80);
+      const sub = oneLine(d.principalSubdivision || '', 80);
+      const country = oneLine(d.countryName || '', 80);
+      const ocean = !name && !sub && !country;
+      return { ocean, name: ocean ? '' : (name || sub || country), sub: ocean ? '' : sub, country: ocean ? '' : country, cc: d.countryCode || '' };
+    });
+    return ok(res, data, { cached, source: 'bigdatacloud' });
+  } catch (e) { return fail(res, e.status || 502, e.message || 'Reverse-geocode failed'); }
+}));
+
+// Shared place-bundle builder (weather everywhere; news wire needs a name).
+async function buildPlace(lat, lon, name, country) {
+  const quoted = /\s/.test(name) ? `"${name}"` : name;
+  const newsQ = country ? `${quoted} ${country}` : quoted;
+  const confQ = `${quoted} (war OR conflict OR airstrike OR missile OR bombing OR ceasefire OR troops OR offensive)`;
+  const wxP = http.get(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,pressure_msl&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code&timezone=auto&forecast_days=3`, { timeout: 12000 });
+  let newsR = { status: 'rejected' }, confR = { status: 'rejected' };
+  if (name) {
+    const newsP = http.get(rssUrl(newsQ), { timeout: 15000 });
+    const confP = http.get(rssUrl(confQ), { timeout: 15000 });
+    [newsR, confR] = await Promise.allSettled([newsP, confP]);
+  }
+  const wx = await wxP.then((v) => ({ status: 'fulfilled', value: v }), (e) => ({ status: 'rejected', reason: e }));
+  let news = [], newsSrc = name ? 'failed' : 'skipped', conflict = [], confSrc = name ? 'failed' : 'skipped';
+  if (newsR.status === 'fulfilled' && newsR.value.status === 200) { news = parseRss(newsR.value.data); if (news.length) newsSrc = 'gnews-rss'; }
+  if (confR.status === 'fulfilled' && confR.value.status === 200) { conflict = parseRss(confR.value.data); if (conflict.length) confSrc = 'gnews-rss'; }
+  // Fallback lane: GDELT (throttled to ~1 req / 5s per IP — serialized, news first).
+  async function gdelt(q) {
+    try {
+      const r = await http.get(gdeltUrl(q), { timeout: 15000 });
+      if (r.status === 200 && Array.isArray(r.data?.articles)) return gdeltArticles(r.data.articles);
+    } catch {}
+    return [];
+  }
+  if (name && !news.length) { news = await gdelt(newsQ); if (news.length) newsSrc = 'gdelt'; await new Promise((r) => setTimeout(r, 6000)); }
+  if (name && !conflict.length) { conflict = await gdelt(confQ); if (conflict.length) confSrc = 'gdelt'; }
+  const out = { place: { name: name || `Open ocean ${lat.toFixed(1)}, ${lon.toFixed(1)}`, country, lat, lon }, weather: null, news, conflict, sources: { news: newsSrc, conflict: confSrc } };
+  if (wx.status === 'fulfilled' && wx.value.status === 200 && wx.value.data?.current) {
+    const c = wx.value.data.current, d = wx.value.data.daily || {};
+    out.weather = {
+      temp: c.temperature_2m, feels: c.apparent_temperature, humidity: c.relative_humidity_2m,
+      wind: c.wind_speed_10m, wind_dir: c.wind_direction_10m, pressure: c.pressure_msl,
+      code: c.weather_code, label: wxLabel(c.weather_code), units: wx.value.data.current_units || {},
+      timezone: wx.value.data.timezone || '', utc_offset_seconds: wx.value.data.utc_offset_seconds ?? 0,
+      server_now_ms: Date.now(),
+      daily: (d.time || []).slice(0, 3).map((t, i) => ({
+        date: t, tmax: d.temperature_2m_max?.[i] ?? null, tmin: d.temperature_2m_min?.[i] ?? null,
+        code: d.weather_code?.[i], label: wxLabel(d.weather_code?.[i]), precip: d.precipitation_probability_max?.[i] ?? null,
+      })),
+    };
+    out.sources.weather = 'ok';
+  } else out.sources.weather = 'failed';
+  if (!out.weather && !out.news.length && !out.conflict.length) throw Object.assign(new Error('All world sources unreachable'), { status: 502 });
+  return out;
+}
+
 // GET /api/world/place?lat=&lon=&name=[&country=] — weather + clock + local news + conflict wire
 router.get('/place', ah(async (req, res) => {
   const lat = Number(req.query.lat), lon = Number(req.query.lon);
@@ -86,50 +151,36 @@ router.get('/place', ah(async (req, res) => {
   const country = oneLine(req.query.country || '', 80).trim();
   if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lon) || lon < -180 || lon > 180) return fail(res, 400, 'Valid ?lat= (-90..90) and ?lon= (-180..180) required');
   if (name.length < 2) return fail(res, 400, '?name= (from /geo) required for the news wire');
-  const quoted = /\s/.test(name) ? `"${name}"` : name;
-  const newsQ = country ? `${quoted} ${country}` : quoted;
-  const confQ = `${quoted} (war OR conflict OR airstrike OR missile OR bombing OR ceasefire OR troops OR offensive)`;
   try {
-    const key = `world:place:${lat.toFixed(2)}:${lon.toFixed(2)}:${newsQ.toLowerCase()}`;
-    const { data, cached } = await getOrSet(key, 1800, async () => {
-      const wxP = http.get(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,pressure_msl&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code&timezone=auto&forecast_days=3`, { timeout: 12000 });
-      const newsP = http.get(rssUrl(newsQ), { timeout: 15000 });
-      const confP = http.get(rssUrl(confQ), { timeout: 15000 });
-      const [wx, newsR, confR] = await Promise.allSettled([wxP, newsP, confP]);
-      let news = [], newsSrc = 'failed', conflict = [], confSrc = 'failed';
-      if (newsR.status === 'fulfilled' && newsR.value.status === 200) { news = parseRss(newsR.value.data); if (news.length) newsSrc = 'gnews-rss'; }
-      if (confR.status === 'fulfilled' && confR.value.status === 200) { conflict = parseRss(confR.value.data); if (conflict.length) confSrc = 'gnews-rss'; }
-      // Fallback lane: GDELT (throttled to ~1 req / 5s per IP — serialized, news first).
-      async function gdelt(q) {
-        try {
-          const r = await http.get(gdeltUrl(q), { timeout: 15000 });
-          if (r.status === 200 && Array.isArray(r.data?.articles)) return gdeltArticles(r.data.articles);
-        } catch {}
-        return [];
-      }
-      if (!news.length) { news = await gdelt(newsQ); if (news.length) newsSrc = 'gdelt'; await new Promise((r) => setTimeout(r, 6000)); }
-      if (!conflict.length) { conflict = await gdelt(confQ); if (conflict.length) confSrc = 'gdelt'; }
-      const out = { place: { name, country, lat, lon }, weather: null, news, conflict, sources: { news: newsSrc, conflict: confSrc } };
-      if (wx.status === 'fulfilled' && wx.value.status === 200 && wx.value.data?.current) {
-        const c = wx.value.data.current, d = wx.value.data.daily || {};
-        out.weather = {
-          temp: c.temperature_2m, feels: c.apparent_temperature, humidity: c.relative_humidity_2m,
-          wind: c.wind_speed_10m, wind_dir: c.wind_direction_10m, pressure: c.pressure_msl,
-          code: c.weather_code, label: wxLabel(c.weather_code), units: wx.value.data.current_units || {},
-          timezone: wx.value.data.timezone || '', utc_offset_seconds: wx.value.data.utc_offset_seconds ?? 0,
-          server_now_ms: Date.now(),
-          daily: (d.time || []).slice(0, 3).map((t, i) => ({
-            date: t, tmax: d.temperature_2m_max?.[i] ?? null, tmin: d.temperature_2m_min?.[i] ?? null,
-            code: d.weather_code?.[i], label: wxLabel(d.weather_code?.[i]), precip: d.precipitation_probability_max?.[i] ?? null,
-          })),
-        };
-        out.sources.weather = 'ok';
-      } else out.sources.weather = 'failed';
-      if (!out.weather && !out.news.length && !out.conflict.length) throw Object.assign(new Error('All world sources unreachable'), { status: 502 });
-      return out;
-    });
+    const key = `world:place:${lat.toFixed(2)}:${lon.toFixed(2)}:${name.toLowerCase()}:${country.toLowerCase()}`;
+    const { data, cached } = await getOrSet(key, 1800, () => buildPlace(lat, lon, name, country));
     return ok(res, data, { cached, source: 'open-meteo + gnews-rss (+gdelt fallback)' });
   } catch (e) { return fail(res, e.status || 502, e.message || 'World lookup failed'); }
+}));
+
+// GET /api/world/pick?lat=&lon= — globe tap → reverse-geocode + full bundle in ONE scan
+router.get('/pick', ah(async (req, res) => {
+  const lat = Number(req.query.lat), lon = Number(req.query.lon);
+  if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lon) || lon < -180 || lon > 180) return fail(res, 400, 'Valid ?lat= (-90..90) and ?lon= (-180..180) required');
+  const la = Math.round(lat * 100) / 100, lo = Math.round(lon * 100) / 100;
+  try {
+    const { data, cached } = await getOrSet(`world:pick:${la.toFixed(2)}:${lo.toFixed(2)}`, 1800, async () => {
+      let rev = { ocean: true, name: '', sub: '', country: '' };
+      try {
+        const r = await http.get(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${la}&longitude=${lo}&localityLanguage=en`, { timeout: 12000 });
+        if (r.status === 200 && typeof r.data === 'object') {
+          const d = r.data || {};
+          const name = oneLine(d.city || d.locality || '', 80);
+          const sub = oneLine(d.principalSubdivision || '', 80);
+          const country = oneLine(d.countryName || '', 80);
+          rev = { ocean: !name && !sub && !country, name: name || sub || country, sub, country };
+        }
+      } catch {}
+      const bundle = await buildPlace(la, lo, rev.ocean ? '' : rev.name, rev.ocean ? '' : rev.country);
+      return { ...bundle, tapped: { lat: la, lon: lo }, ocean: rev.ocean, resolved: rev.ocean ? null : { name: rev.name, sub: rev.sub, country: rev.country } };
+    });
+    return ok(res, data, { cached, source: 'bigdatacloud + open-meteo + gnews-rss' });
+  } catch (e) { return fail(res, e.status || 502, e.message || 'Globe pick failed'); }
 }));
 
 // GET /api/world/attacks — live botnet C2s (Feodo) + freshly-exploited CVEs (KEV)

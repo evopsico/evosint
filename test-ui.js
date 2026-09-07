@@ -52,7 +52,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   });
   dom.window.fetch = (u, o) => globalThis.fetch(new URL(u, dom.window.location.href).toString(), o);
   dom.window.AbortController = AbortController; // native controller: undici rejects jsdom-realm signals
-  dom.window.eval(appJs + '\n;window.__T={openAuth,show,TOOLS,AUTH,S,apiGet,addEntity,buildReport,LM,lmDetect,lmMk,lmReset,renderLinkMap};');
+  dom.window.eval(appJs + '\n;window.__T={openAuth,show,TOOLS,AUTH,S,apiGet,addEntity,buildReport,LM,lmDetect,lmMk,lmReset,renderLinkMap,GLOBE,globeDots,globeProject,globeInvert,globeTapPx};');
   const T = () => dom.window.__T;
   const q = (s) => dom.window.document.querySelector(s);
   const qa = (s) => [...dom.window.document.querySelectorAll(s)];
@@ -113,7 +113,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     d2.window.AbortController = AbortController;
     if (seed && seed.tok) d2.window.localStorage.setItem('evosint-token', seed.tok);
     if (seed && seed.me) d2.window.localStorage.setItem('evosint-me', seed.me);
-    d2.window.eval(appJs + '\n;window.__T={openAuth,show,TOOLS,AUTH,S,apiGet,addEntity,buildReport,LM,lmDetect,lmMk,lmReset,renderLinkMap};');
+    d2.window.eval(appJs + '\n;window.__T={openAuth,show,TOOLS,AUTH,S,apiGet,addEntity,buildReport,LM,lmDetect,lmMk,lmReset,renderLinkMap,GLOBE,globeDots,globeProject,globeInvert,globeTapPx};');
     await sleep(2500);
     return { d2, errs };
   }
@@ -183,6 +183,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   T().show('world'); await sleep(300);
   check('world view mounted', q('#v-world').classList.contains('on') && !!q('#w-q') && !!q('#w-atkgo') && !!q('#w-auto'));
   check('world presets render', qa('#w-presets [data-wp]').length >= 6, qa('#w-presets [data-wp]').length + ' presets');
+  check('globe canvas mounted, dormant headless', !!q('#w-globe') && !T().GLOBE.on);
+  check('globe land dots embedded', T().globeDots().length > 8000, T().globeDots().length + ' dots');
+  T().GLOBE.rot.lam = 0.6; T().GLOBE.rot.phi = 0.35;
+  const gp = T().globeProject(52.52, 13.41, 200);
+  const gb = T().globeInvert(gp.x, gp.y, 200);
+  check('globe project/invert round-trips', Math.abs(gb.lat - 52.52) < 0.5 && Math.abs(gb.lon - 13.41) < 0.5, `back=${gb.lat.toFixed(2)},${gb.lon.toFixed(2)}`);
+  check('globe misses space', T().globeInvert(0, 0, 200) === null);
   q('#w-q').value = 'Berlin'; q('#w-go').click();
   let geoOk = false;
   for (let i = 0; i < 50 && !geoOk; i++) { await sleep(500); geoOk = qa('#w-geo [data-gi]').length > 0; }
