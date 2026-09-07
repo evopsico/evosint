@@ -99,6 +99,8 @@ async function saveGuests(g) { return backendName() === 'vercel-kv' ? kSave(K.gu
 
 let secretWarned = false;
 async function getSecret() {
+  // Explicit env always wins (required for multi-instance/serverless consistency).
+  if (process.env.SESSION_SECRET && process.env.SESSION_SECRET.length >= 16) return process.env.SESSION_SECRET;
   if (backendName() === 'vercel-kv') {
     let s = await kLoad(K.secret, null);
     if (typeof s !== 'string') {
