@@ -131,6 +131,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('burger opens drawer', q('#side').classList.contains('open'));
   q('#sideback').click(); await sleep(200);
   check('backdrop tap closes drawer', !q('#side').classList.contains('open'));
+  check('tabbar has 5 tabs', qa('#tabbar button').length === 5, qa('#tabbar button').length + ' tabs');
+  qa('#tabbar button')[1].click(); await sleep(300);
+  check('tab navigates + actives', q('#v-search').classList.contains('on') && qa('#tabbar button')[1].classList.contains('on'));
+  qa('#tabbar button')[4].click(); await sleep(200);
+  check('menu tab opens drawer', q('#side').classList.contains('open'));
+  qa('#tabbar button')[0].click(); await sleep(300);
+  check('home tab back + drawer shut', q('#v-dash').classList.contains('on') && !q('#side').classList.contains('open') && qa('#tabbar button')[0].classList.contains('on'));
 
   console.log(failures === 0 ? '\nALL UI TESTS GREEN' : `\n${failures} FAILURES`);
   srv.kill();

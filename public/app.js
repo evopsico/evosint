@@ -278,6 +278,7 @@ function show(v){
   $('#vsub').textContent = VIEW_TITLES[v][1];
   $('#side').classList.remove('open');
   const sb = document.getElementById('sideback'); if(sb) sb.classList.remove('open');
+  $$('#tabbar button').forEach(b=>b.classList.toggle('on', b.dataset.v===v));
   if(v==='graph') renderGraph();
   if(v==='dash') renderDash();
 }
@@ -1139,6 +1140,10 @@ show('dash');
 
 $('#burger').onclick = ()=>{ $('#side').classList.toggle('open'); const sb = document.getElementById('sideback'); if(sb) sb.classList.toggle('open'); };
 $('#sideback').onclick = ()=>{ $('#side').classList.remove('open'); document.getElementById('sideback').classList.remove('open'); };
+$$('#tabbar button').forEach(b=>b.onclick=()=>{
+  if(b.dataset.v==='__menu'){ $('#side').classList.add('open'); document.getElementById('sideback')?.classList.add('open'); }
+  else show(b.dataset.v);
+});
 $('#sgo').onclick = ()=>runSearch();
 $('#sin').addEventListener('keydown',e=>{ if(e.key==='Enter') runSearch(); });
 $$('#stabs .fbtn').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));

@@ -161,7 +161,7 @@ app.get('/', (req, res) => {
 app.get(['/health', '/api/health'], (req, res) => {
   res.json({
     status: 'OK',
-    version: '2.10.2',
+    version: '2.11.0',
     uptime_seconds: Math.round(process.uptime()),
     timestamp: new Date().toISOString(),
   });

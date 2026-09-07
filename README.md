@@ -64,9 +64,10 @@ URLs with the package version, so edits appear on plain reload — no hard refre
 - Sessions persist: "Remember me" (default) survives browser restarts; unticked
   logins last for the tab session only. The dashboard paints your last-known
   identity instantly, then confirms with the server (works offline).
-- Fully responsive: sidebar becomes a swipe-away drawer with backdrop on tablets
-  and phones, grids collapse, touch targets hit 44px, inputs stay at 16px so iOS
-  never auto-zooms.
+- Fully responsive: bottom thumb-navigation bar (Home/Search/Modules/Graph/Menu)
+  plus swipe-away drawer with backdrop on tablets and phones, roomy single-column
+  cards, grids collapse, touch targets hit 44px+, inputs stay at 16px so iOS
+  never auto-zooms, notch safe-areas respected.
 
 ## Console views
 
