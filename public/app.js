@@ -1068,7 +1068,7 @@ function iconFor(t){ return {email:'E',domain:'D',ip:'I',username:'U',hash:'H',w
 // Left-to-right link tree: one seed user on the left, linked accounts fan right,
 // each box expandable into the next hop. Hops reuse the card endpoints, so quota
 // cost == running those cards by hand. XSS-safe: every dynamic string via esc().
-const LM = { seq: 0, root: null, nodes: {}, MAXKIDS: 12, MAXDEPTH: 3 };
+const LM = { seq: 0, root: null, nodes: {}, MAXKIDS: 12, MAXDEPTH: 3, zoom: 1, sel: null, scans: 0, compact: false };
 function lmDetect(seed){
   seed = String(seed || '').trim().replace(/^@/, '');
   if(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(seed)) return 'email';
@@ -1082,12 +1082,26 @@ function lmMk(kind, label, sub, url, depth, parent){
   if(parent && LM.nodes[parent]) LM.nodes[parent].kids.push(id);
   return id;
 }
-function lmReset(){ LM.seq = 0; LM.root = null; LM.nodes = {}; }
+function lmReset(){ LM.seq = 0; LM.root = null; LM.nodes = {}; LM.sel = null; LM.scans = 0; }
 function lmCan(n){
   if(!n || n.depth >= LM.MAXDEPTH) return false;
   if(n.kind === 'username' || n.kind === 'email' || n.kind === 'domain') return true;
   if(n.kind === 'profile') return !!lmGhHandle(n.url);
   return false;
+}
+function lmPath(id){ const s = new Set(); let n = LM.nodes[id]; while(n){ s.add(n.id); n = n.parent ? LM.nodes[n.parent] : null; } return s; }
+function lmZoom(d){ LM.zoom = Math.min(2, Math.max(0.4, Math.round((LM.zoom + d) * 100) / 100)); renderLinkMap(); }
+function lmFit(){
+  if(!LM.root || !LM.nodes[LM.root]) return;
+  const sc = $('#lmscroll'), L = lmLayout(); if(!sc || !L) return;
+  const cw = sc.clientWidth || L.width;
+  LM.zoom = Math.min(1, Math.max(0.4, Math.floor((cw - 32) / L.width * 100) / 100));
+  renderLinkMap(); lmHome();
+}
+function lmHome(){
+  const sc = $('#lmscroll'), r = LM.nodes[LM.root]; if(!sc || !r) return;
+  sc.scrollLeft = Math.max(0, r._x * LM.zoom - 24);
+  sc.scrollTop = Math.max(0, r._y * LM.zoom - 48);
 }
 function lmGhHandle(url){
   const m = String(url || '').match(/^https?:\/\/(www\.)?github\.com\/([^/?#]+)/i);
@@ -1167,12 +1181,15 @@ async function lmFetchKids(n){
 }
 async function lmExpand(id){
   const n = LM.nodes[id]; if(!n || n.st === 'loading' || n.st === 'open') return;
-  if(!lmCan(n)){ // leaf: open the link, else copy the value
+  if(!lmCan(n)){ // leaf: trace it, then open the link or copy the value
+    LM.sel = id; renderLinkMap();
     const h = n.url ? safeHref(n.url) : null;
     if(h) window.open(h, '_blank', 'noopener');
     else copyT(n.url || n.label);
     return;
   }
+  LM.sel = id;
+  LM.scans += (n.kind === 'username' || n.kind === 'email') ? 2 : 1;
   n.st = 'loading'; n.err = ''; renderLinkMap();
   try{
     const kids = await lmFetchKids(n);
@@ -1201,7 +1218,8 @@ function lmToggle(id){
 }
 function lmLayout(){
   const root = LM.nodes[LM.root]; if(!root) return null;
-  const W = 212, BH = 58, CGAP = 88, RH = 66, PAD = 22;
+  const W = LM.compact ? 168 : 212, BH = 80,
+        CGAP = LM.compact ? 60 : 88, RH = LM.compact ? 98 : 90, PAD = LM.compact ? 16 : 22;
   let rows = 0, maxD = 0;
   const walk = n => {
     if(n.depth > maxD) maxD = n.depth;
@@ -1213,46 +1231,62 @@ function lmLayout(){
     n._y = PAD + n._r * RH;
   };
   walk(root);
-  return { W, BH, width: PAD * 2 + maxD * (W + CGAP) + W, height: PAD * 2 + Math.max(rows, 1) * RH };
+  return { W, BH, CGAP, PAD, maxD, width: PAD * 2 + maxD * (W + CGAP) + W, height: PAD * 2 + Math.max(rows, 1) * RH };
 }
-function lmEdges(W){
+function lmEdges(L, hot){
   let s = '';
   Object.values(LM.nodes).forEach(n=>{
     if(n.st !== 'open') return;
-    const x1 = n._x + W, y1 = n._y + 29;
+    const x1 = n._x + L.W, y1 = n._y + L.BH / 2;
     n.kids.map(k => LM.nodes[k]).filter(Boolean).forEach(k=>{
-      const x2 = k._x, y2 = k._y + 29, mx = (x1 + x2) / 2;
-      s += `<path d="M ${x1} ${y1} H ${mx} V ${y2} H ${x2}" fill="none" stroke="#3d3d3d" stroke-width="1.5"/>`;
+      const x2 = k._x, y2 = k._y + L.BH / 2, mx = (x1 + x2) / 2;
+      s += `<path class="${hot.has(k.id) ? 'hot' : ''}" d="M ${x1} ${y1} H ${mx} V ${y2} H ${x2}"/>`;
     });
   });
   return s;
 }
-function lmNodeHTML(n, W){
-  const cls = 'lmnode' + (n.depth === 0 ? ' root' : '') + (n.st === 'loading' ? ' loading' : '') + (n.st === 'err' ? ' err' : '');
-  const act = n.st === 'loading' ? '<span class="lmspin"></span> expanding…'
+function lmNodeHTML(n, L, hot){
+  const glyph = { username: 'U', email: 'E', domain: 'D', profile: 'L', detail: '•', seed: '★' }[n.kind] || '•';
+  const cls = 'lmnode' + (n.depth === 0 ? ' root' : '') + (n.st === 'loading' ? ' loading' : '') + (n.st === 'err' ? ' err' : '') + (hot.has(n.id) ? ' hot' : '');
+  const act = n.st === 'loading' ? 'expanding…'
     : n.st === 'open' ? '− collapse'
-    : n.st === 'err' ? '↻ retry — ' + esc(n.err || 'failed')
+    : n.st === 'err' ? '↻ ' + (n.err || 'retry')
     : lmCan(n) ? '+ expand'
-    : n.url && safeHref(n.url) ? '⧉ open link'
+    : n.url && safeHref(n.url) ? '⧉ open'
     : '⧉ copy';
-  return `<div class="${cls}" data-lm="${n.id}" style="left:${n._x}px;top:${n._y}px;width:${W}px" title="${esc(n.label)}">`
-    + `<div class="lmkind">${esc(lmKindLabel(n.kind))}${n.depth ? ' · hop ' + n.depth : ''}</div>`
+  const open = n.st === 'open' ? `<span class="lmcnt">${n.kids.length}</span>` : '';
+  return `<div class="${cls}" data-lm="${n.id}" style="left:${n._x}px;top:${n._y}px;width:${L.W}px" title="${esc(n.label)}${n.sub ? ' — ' + esc(n.sub) : ''}">`
+    + `<div class="lmrow"><span class="lmico">${glyph}</span><span class="lmkind">${esc(lmKindLabel(n.kind))}${n.depth ? ' · H' + n.depth : ''}</span>${open}</div>`
     + `<div class="lmlabel">${esc(n.label)}</div>`
-    + (n.sub ? `<div class="lmsub">${esc(n.sub)}</div>` : '')
-    + `<div class="lmact">${act}</div></div>`;
+    + `<div class="lmfoot"><span class="lmsub">${esc(n.sub || '')}</span><span class="lmact">${n.st === 'loading' ? '<span class="lmspin"></span> ' : ''}${esc(act)}</span></div></div>`;
+}
+function lmStats(){
+  const s = $('#lmstats'); if(!s) return;
+  if(!LM.root || !LM.nodes[LM.root]){ s.textContent = 'empty map'; return; }
+  let maxD = 0; Object.values(LM.nodes).forEach(n=>{ if(n.depth > maxD) maxD = n.depth; });
+  s.textContent = `${Object.keys(LM.nodes).length} nodes · ${maxD} hop${maxD === 1 ? '' : 's'} · ~${LM.scans} scans` + (LM.sel && LM.nodes[LM.sel] ? ' · ✕ clear trace' : '');
 }
 function renderLinkMap(){
   const tree = $('#lmtree'); if(!tree) return;
+  const sc0 = $('#lmscroll');
   if(!LM.root || !LM.nodes[LM.root]){
-    tree.innerHTML = '<p style="padding:34px;text-align:center;color:var(--faint)">Start from one <b>username</b>, <b>email</b>, or <b>domain</b> above.<br>Linked accounts fan out to the right — click any box to grow the next hop.</p>';
-    const c0 = $('#lmcount'); if(c0) c0.textContent = '';
-    return;
+    if(sc0) sc0.classList.remove('compact');
+    tree.innerHTML = `<p style="padding:34px 18px;text-align:center;color:var(--faint)">Start from one <b>username</b>, <b>email</b>, or <b>domain</b> above.<br>Linked accounts fan out to the right — tap any box to grow the next hop.<br><span style="display:inline-block;margin-top:12px">try: <span class="lmex" data-ex="octocat">octocat</span> <span class="lmex" data-ex="github.com">github.com</span></span></p>`;
+    $$('#lmtree [data-ex]').forEach(el => el.onclick = () => { const i = $('#lm-seed'); if(i) i.value = el.dataset.ex; lmSeed(el.dataset.ex); });
+    lmStats(); return;
   }
+  const cw = (sc0 && sc0.clientWidth) || 0;
+  LM.compact = cw > 0 && cw < 640;
+  if(sc0) sc0.classList.toggle('compact', LM.compact);
   const L = lmLayout();
-  tree.innerHTML = `<div class="lminner" style="width:${L.width}px;height:${L.height}px"><svg class="lmedges" width="${L.width}" height="${L.height}">${lmEdges(L.W)}</svg>`
-    + Object.values(LM.nodes).map(n => lmNodeHTML(n, L.W)).join('') + '</div>';
+  const hot = LM.sel && LM.nodes[LM.sel] ? lmPath(LM.sel) : new Set();
+  let bands = '';
+  for(let d = 0; d <= L.maxD; d++) bands += `<div class="lmband${d % 2 ? ' alt' : ''}" style="left:${L.PAD + d * (L.W + L.CGAP)}px;width:${L.W}px"><b>HOP ${d}</b></div>`;
+  const zw = Math.ceil(L.width * LM.zoom), zh = Math.ceil(L.height * LM.zoom);
+  tree.innerHTML = `<div class="lmzoom" style="width:${zw}px;height:${zh}px"><div class="lminner" style="width:${L.width}px;height:${L.height}px;transform:scale(${LM.zoom})">${bands}<svg class="lmedges" width="${L.width}" height="${L.height}">${lmEdges(L, hot)}</svg>`
+    + Object.values(LM.nodes).map(n => lmNodeHTML(n, L, hot)).join('') + '</div></div>';
   $$('#lmtree [data-lm]').forEach(el => el.onclick = () => lmToggle(el.dataset.lm));
-  const c = $('#lmcount'); if(c) c.textContent = Object.keys(LM.nodes).length + ' nodes';
+  lmStats();
 }
 function lmToGraph(){
   const all = Object.values(LM.nodes); if(!all.length) return toast('Map something first');
@@ -1393,9 +1427,10 @@ function buildViews(){
     <div class="brow"><button class="btn" id="rep-build">Build report ▸</button><button class="ghost" id="rep-dl" disabled>Download HTML</button><button class="ghost" id="rep-md" disabled>Copy Markdown</button></div>
     <div id="rep-out" style="margin-top:10px"></div></div>`) +
   v('linkmap', `<div class="casehead"><span class="no">CASE FILE <b data-caseno></b></span><span class="stamp">Link map · Fictional</span></div>
-  <div class="card" style="margin-bottom:12px"><div class="chead"><div class="cico">🕸</div><div><h3>Link Map</h3><p>One user on the left, their accounts fanning right. Click any box to grow the next hop — each hop costs the same scans as running those cards.</p></div><span class="pill" id="lmcount"></span></div>
-    <div class="brow"><input id="lm-seed" placeholder="username, email, or domain…" style="flex:1;padding:10px 14px;border-radius:10px;border:1px solid var(--border2);background:#000;color:var(--text);font-family:var(--mono);outline:none"><button class="btn" id="lm-go" style="flex:none">Map it ▸</button><button class="ghost" id="lm-tograph">Send to Investigate</button><button class="ghost" id="lm-clear">Clear</button></div></div>
-    <div class="lmscroll"><div id="lmtree"><p style="padding:34px;text-align:center;color:var(--faint)">Start from one <b>username</b>, <b>email</b>, or <b>domain</b> above.</p></div></div>`) +
+  <div class="card" style="margin-bottom:12px"><div class="chead"><div class="cico">🕸</div><div><h3>Link Map</h3><p>One user on the left, their accounts fanning right. Tap any box to grow the next hop and trace it back to the seed — each hop costs the same scans as running those cards.</p></div></div>
+    <div class="brow"><input id="lm-seed" placeholder="username, email, or domain…" style="flex:1;min-width:180px;padding:10px 14px;border-radius:10px;border:1px solid var(--border2);background:#000;color:var(--text);font-family:var(--mono);outline:none"><button class="btn" id="lm-go" style="flex:none">Map it ▸</button><button class="ghost" id="lm-tograph">Send to Investigate</button><button class="ghost" id="lm-clear">Clear</button></div>
+    <div class="brow" style="margin-top:8px;align-items:center"><button class="mini" id="lmstats" title="tap to clear the trace">empty map</button><span style="flex:1"></span><button class="mini" id="lm-zout" title="zoom out">−</button><button class="mini" id="lm-zin" title="zoom in">+</button><button class="mini" id="lm-zfit" title="fit to width">fit</button><button class="mini" id="lm-home" title="scroll to root">⌂ root</button></div></div>
+    <div class="lmscroll" id="lmscroll"><div id="lmtree"><p style="padding:34px;text-align:center;color:var(--faint)">Start from one <b>username</b>, <b>email</b>, or <b>domain</b> above.</p></div></div>`) +
   v('breach', `<div class="grid" data-cards="breach"></div>`) +
   v('people', `<div class="grid" data-cards="people"></div>`) +
   v('net', `<div class="grid" data-cards="net"></div>`) +
@@ -1598,6 +1633,13 @@ $('#lm-go').onclick = ()=>lmSeed($('#lm-seed').value);
 $('#lm-seed').addEventListener('keydown', e=>{ if(e.key==='Enter') lmSeed(e.target.value); });
 $('#lm-clear').onclick = ()=>{ lmReset(); renderLinkMap(); };
 $('#lm-tograph').onclick = lmToGraph;
+$('#lm-zin').onclick = ()=>lmZoom(0.25);
+$('#lm-zout').onclick = ()=>lmZoom(-0.25);
+$('#lm-zfit').onclick = lmFit;
+$('#lm-home').onclick = lmHome;
+$('#lmstats').onclick = ()=>{ if(LM.sel){ LM.sel = null; renderLinkMap(); } };
+let lmRzT = null;
+window.addEventListener('resize', ()=>{ clearTimeout(lmRzT); lmRzT = setTimeout(()=>{ const sc = $('#lmscroll'); if(!sc || !LM.root || !LM.nodes[LM.root]) return; const c = sc.clientWidth > 0 && sc.clientWidth < 640; if(c !== LM.compact){ LM.compact = c; renderLinkMap(); } }, 250); });
 // ---- case report builder (ticked entities → standalone HTML + Markdown) ----
 function selectedEntities(){
   const boxes = $$('#entlist [data-rep]');

@@ -164,6 +164,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   T().renderLinkMap(); await sleep(300);
   check('tree renders nodes + elbow edges', qa('#lmtree .lmnode').length === 3 && qa('#lmtree svg path').length === 2, qa('#lmtree .lmnode').length + ' nodes, ' + qa('#lmtree svg path').length + ' edges');
   check('root styled, expand affordance shown', !!q('#lmtree .lmnode.root') && q('#lmtree').textContent.includes('+ expand'));
+  check('map zoom + stats controls', !!q('#lm-zin') && !!q('#lm-zout') && !!q('#lm-zfit') && !!q('#lm-home') && !!q('#lmstats'));
+  check('column bands rendered', qa('#lmtree .lmband').length >= 2, qa('#lmtree .lmband').length + ' bands');
+  T().LM.sel = T().LM.nodes[lmRoot].kids[0]; T().renderLinkMap(); await sleep(200);
+  check('trace highlights root path', qa('#lmtree .lmnode.hot').length === 2 && qa('#lmtree svg path.hot').length === 1, qa('#lmtree .lmnode.hot').length + ' hot nodes');
+  check('stats count nodes', (q('#lmstats') || {}).textContent.includes('3 nodes'), (q('#lmstats') || {}).textContent);
+  T().lmReset(); T().renderLinkMap(); await sleep(200);
+  check('empty state offers examples', !!q('#lmtree [data-ex="octocat"]'));
   T().lmReset(); T().renderLinkMap(); await sleep(200);
 
   console.log(failures === 0 ? '\nALL UI TESTS GREEN' : `\n${failures} FAILURES`);
