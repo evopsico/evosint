@@ -46,10 +46,16 @@ function check(n, c, x) { total++; if (c) pass++; console.log((c ? 'PASS' : 'FAI
   const tmp = r.j.data.tmp;
   r = await req('POST', '/api/auth/totp/verify', { tmp, code: code(secret) });
   check('totp verify', r.s === 200 && !!((r.j || {}).data || {}).token);
-  for (const [p, want] of [['/api/recon/ghorg/github', 'github'], ['/api/recon/pkg/npm/express', 'express'], ['/api/recon/certs?q=signal', null], ['/api/threat/greynoise/8.8.8.8', null]]) {
-    r = await req('GET', p, null, H);
-    check('GET ' + p.split('?')[0], r.s === 200 && (want ? ((r.j || {}).data || {}).login === want || ((r.j || {}).data || {}).name === want : Array.isArray((r.j || {}).data) || typeof (((r.j || {}).data || {}).observed) === 'boolean'));
-  }
+  r = await req('GET', '/api/recon/ghorg/github', null, H);
+  check('GET /api/recon/ghorg', r.s === 200 && ((r.j || {}).data || {}).login === 'github');
+  r = await req('GET', '/api/recon/pkg/npm/express', null, H);
+  check('GET /api/recon/pkg/npm', r.s === 200 && ((r.j || {}).data || {}).name === 'express');
+  r = await req('GET', '/api/threat/greynoise/8.8.8.8', null, H);
+  check('GET /api/threat/greynoise', r.s === 200 && typeof ((((r.j || {}).data) || {}).observed) === 'boolean');
+  // certs: crt.sh flakes — try a second narrow query before calling it broken
+  r = await req('GET', '/api/recon/certs?q=signal', null, H);
+  if (r.s !== 200) r = await req('GET', '/api/recon/certs?q=mozilla', null, H);
+  check('GET /api/recon/certs', r.s === 200 && Array.isArray((r.j || {}).data));
   console.log(`\nLIVE ${pass}/${total}`);
   process.exit(pass === total ? 0 : 1);
 })();
