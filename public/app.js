@@ -1205,5 +1205,5 @@ $('#printBtn').onclick = ()=>window.print();
 $('#qgo').onclick = ()=>{ const v=$('#q').value.trim(); if(v){ show('search'); runBattery(v); } };
 $('#q').addEventListener('keydown',e=>{ if(e.key==='Enter') $('#qgo').click(); });
 
-fetch('/health').then(r=>r.json()).then(h=>{ $('#hdot').className='dot ok'; $('#htxt').textContent='online · v'+(h.version||'?'); })
+fetch('/api/health').then(r=>r.json()).then(h=>{ $('#hdot').className='dot ok'; $('#htxt').textContent='online · v'+(h.version||'?'); })
   .catch(()=>{ $('#hdot').className='dot bad'; $('#htxt').textContent='offline'; });
