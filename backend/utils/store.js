@@ -12,28 +12,39 @@ const path = require('path');
 // keys:  [ {id, userId, label, hash, prefix, created, last_used} ]
 // guests:{ [ip]: {left, seen} }
 const BACKEND = String(process.env.STORE || 'file').toLowerCase();
-const DIR = path.join(__dirname, '..', 'data');
+const DEFAULT_DIR = path.join(__dirname, '..', 'data');
+// NOTE: resolved through an env check ON PURPOSE, not as a static literal.
+// Vercel's file tracer bundles any statically-resolvable fs path it sees —
+// the old literal form silently shipped backend/data (password hashes +
+// session secret) inside the serverless function. With env indirection the
+// tracer cannot resolve it, so nothing leaks. Bonus: Docker/test overrides.
+function dataDir() { return process.env.EVOSINT_DATA_DIR || DEFAULT_DIR; }
 
 function ensureDataDir() {
   if (BACKEND !== 'file') return;
-  if (!fs.existsSync(DIR)) fs.mkdirSync(DIR, { recursive: true });
+  const d = dataDir();
+  if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 }
 function dataFile(name) {
   ensureDataDir();
-  return path.join(DIR, name);
+  return path.join(dataDir(), name);
 }
 
 // ---------- file backend ----------
+const NO_DISK_MSG = 'Local file storage is unavailable here (read-only/serverless filesystem). Set STORE=vercel-kv and connect Upstash Redis, or run where disk persists.';
 async function fLoad(name, fallback) {
+  if (process.env.VERCEL) throw new Error(NO_DISK_MSG);
   try {
     const p = dataFile(name);
     if (!fs.existsSync(p)) return fallback;
     return JSON.parse(await fsp.readFile(p, 'utf8'));
-  } catch {
+  } catch (e) {
+    if (e.message === NO_DISK_MSG) throw e;
     return fallback;
   }
 }
 async function fSave(name, obj) {
+  if (process.env.VERCEL) throw new Error(NO_DISK_MSG);
   ensureDataDir();
   const p = dataFile(name);
   const tmp = p + '.tmp';
@@ -124,4 +135,4 @@ async function getSecret() {
   return s.v;
 }
 
-module.exports = { DIR, ensureDataDir, dataFile, loadUsers, saveUsers, loadKeys, saveKeys, loadGuests, saveGuests, getSecret, backendName };
+module.exports = { get DIR() { return dataDir(); }, dataDir, ensureDataDir, dataFile, loadUsers, saveUsers, loadKeys, saveKeys, loadGuests, saveGuests, getSecret, backendName };

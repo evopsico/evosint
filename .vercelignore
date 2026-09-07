@@ -1,0 +1,5 @@
+# Never upload local/auth data or secrets to Vercel (function bundles AND static).
+# Without this, password hashes + session secrets would ship inside the build.
+backend/data/
+.env
+.env.local

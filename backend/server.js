@@ -99,46 +99,46 @@ app.use('/api/auth', authRouter);
 app.use('/api', quotaMiddleware);
 ensureSeed().catch((e) => console.error('auth seed failed:', e.message));
 
-// ---------- Route registry (replaces 11 copy-pasted try/catch blocks) ----------
-const ROUTES = [
-  ['/api/ip', './routes/ip'],
-  ['/api/domain', './routes/domain'],
-  ['/api/dns', './routes/dns'],
-  ['/api/email', './routes/email'],
-  ['/api/phone', './routes/phone'],
-  ['/api/username', './routes/username'],
-  ['/api/github', './routes/github'],
-  ['/api/social', './routes/social'],
-  ['/api/ssl', './routes/ssl'],
-  ['/api/cve', './routes/cve'],
-  ['/api/hash', './routes/hash'],
-  ['/api/utils', './routes/utils'],
-  ['/api/network', './routes/network'],
-  ['/api/threat', './routes/threat'],
-  ['/api/archive', './routes/archive'],
-  ['/api/geo', './routes/geo'],
-  ['/api/crypto', './routes/blockchain'],
-  ['/api/people', './routes/people'],
-  ['/api/bgp', './routes/bgp'],
-  ['/api/verify', './routes/verify'],
-  ['/api/forensics', './routes/forensics'],
-  ['/api/company', './routes/company'],
-  ['/api/oauth', './routes/oauth'],
-  ['/api/breacher', './routes/breacher'],
-  ['/api/recon', './routes/recon'],
-  ['/api/lab', './routes/stress'],
-];
-
-for (const [mount, mod] of ROUTES) {
+// ---------- Route registry ----------
+// NOTE ON DEPLOY SAFETY: every route file is required with a STATIC string
+// literal. Vercel's file tracer (nft) only bundles statically-analyzable
+// requires — a `require(variable)` loop once shipped a function with NO route
+// files in it (health + auth worked, everything else 404'd). This explicit
+// form also makes the README's "no dynamic require" claim literally true.
+function safeMount(mountPath, load) {
   try {
-    // eslint-disable-next-line global-require, import/no-dynamic-require
-    const r = require(mod);
-    app.use(mount, r);
-    console.log(`✓ ${mount} loaded`);
+    app.use(mountPath, load());
+    console.log(`✓ ${mountPath} loaded`);
   } catch (error) {
-    console.error(`✗ Failed to load ${mount} (${mod}):`, error.message);
+    console.error(`✗ Failed to load ${mountPath}:`, error.message);
   }
 }
+safeMount('/api/ip', () => require('./routes/ip'));
+safeMount('/api/domain', () => require('./routes/domain'));
+safeMount('/api/dns', () => require('./routes/dns'));
+safeMount('/api/email', () => require('./routes/email'));
+safeMount('/api/phone', () => require('./routes/phone'));
+safeMount('/api/username', () => require('./routes/username'));
+safeMount('/api/github', () => require('./routes/github'));
+safeMount('/api/social', () => require('./routes/social'));
+safeMount('/api/ssl', () => require('./routes/ssl'));
+safeMount('/api/cve', () => require('./routes/cve'));
+safeMount('/api/hash', () => require('./routes/hash'));
+safeMount('/api/utils', () => require('./routes/utils'));
+safeMount('/api/network', () => require('./routes/network'));
+safeMount('/api/threat', () => require('./routes/threat'));
+safeMount('/api/archive', () => require('./routes/archive'));
+safeMount('/api/geo', () => require('./routes/geo'));
+safeMount('/api/crypto', () => require('./routes/blockchain'));
+safeMount('/api/people', () => require('./routes/people'));
+safeMount('/api/bgp', () => require('./routes/bgp'));
+safeMount('/api/verify', () => require('./routes/verify'));
+safeMount('/api/forensics', () => require('./routes/forensics'));
+safeMount('/api/company', () => require('./routes/company'));
+safeMount('/api/oauth', () => require('./routes/oauth'));
+safeMount('/api/breacher', () => require('./routes/breacher'));
+safeMount('/api/recon', () => require('./routes/recon'));
+safeMount('/api/lab', () => require('./routes/stress'));
 
 // ---------- Static + pages (no-store: a cached UI is a stale UI) ----------
 const NO_STORE = (res) => res.setHeader('Cache-Control', 'no-store');
